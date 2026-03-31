@@ -277,13 +277,14 @@
   <link name="plate_left">
     <inertial>
       <origin xyz="0 0 -0.071500" rpy="0 0 0"/>
-      <mass value="0.055000"/>
-      <inertia ixx="0.000356" ixy="0" ixz="0" iyy="0.000466" iyz="0" izz="0.000111"/>
+      <mass value="0.060000"/>
+      <inertia ixx="0.000380" ixy="0" ixz="0" iyy="0.000490" iyz="0" izz="0.000115"/>
     </inertial>
+    <!-- Vertical struts (widened to 25mm for better contact) -->
     <visual>
       <origin xyz="0.050000 0 -0.055000" rpy="0 0 0"/>
       <geometry>
-        <box size="0.012000 0.008000 0.110000"/>
+        <box size="0.012000 0.025000 0.110000"/>
       </geometry>
       <material name="">
         <color rgba="0.35 0.35 0.38 1.0"/>
@@ -292,13 +293,13 @@
     <collision>
       <origin xyz="0.050000 0 -0.055000" rpy="0 0 0"/>
       <geometry>
-        <box size="0.012000 0.008000 0.110000"/>
+        <box size="0.012000 0.025000 0.110000"/>
       </geometry>
     </collision>
     <visual>
       <origin xyz="-0.050000 0 -0.055000" rpy="0 0 0"/>
       <geometry>
-        <box size="0.012000 0.008000 0.110000"/>
+        <box size="0.012000 0.025000 0.110000"/>
       </geometry>
       <material name="">
         <color rgba="0.35 0.35 0.38 1.0"/>
@@ -307,22 +308,23 @@
     <collision>
       <origin xyz="-0.050000 0 -0.055000" rpy="0 0 0"/>
       <geometry>
-        <box size="0.012000 0.008000 0.110000"/>
+        <box size="0.012000 0.025000 0.110000"/>
       </geometry>
     </collision>
+    <!-- Horizontal bar extended inward as hook (plate_left: -Y = inward) -->
     <visual>
-      <origin xyz="0 0 -0.116000" rpy="0 0 0"/>
+      <origin xyz="0 -0.015000 -0.116000" rpy="0 0 0"/>
       <geometry>
-        <box size="0.100000 0.012000 0.012000"/>
+        <box size="0.100000 0.042000 0.015000"/>
       </geometry>
       <material name="">
         <color rgba="0.40 0.40 0.43 1.0"/>
       </material>
     </visual>
     <collision>
-      <origin xyz="0 0 -0.116000" rpy="0 0 0"/>
+      <origin xyz="0 -0.015000 -0.116000" rpy="0 0 0"/>
       <geometry>
-        <box size="0.100000 0.012000 0.012000"/>
+        <box size="0.100000 0.042000 0.015000"/>
       </geometry>
     </collision>
     <visual>
@@ -367,13 +369,14 @@
   <link name="plate_right">
     <inertial>
       <origin xyz="0 0 -0.071500" rpy="0 0 0"/>
-      <mass value="0.055000"/>
-      <inertia ixx="0.000356" ixy="0" ixz="0" iyy="0.000466" iyz="0" izz="0.000111"/>
+      <mass value="0.060000"/>
+      <inertia ixx="0.000380" ixy="0" ixz="0" iyy="0.000490" iyz="0" izz="0.000115"/>
     </inertial>
+    <!-- Vertical struts (widened to 25mm) -->
     <visual>
       <origin xyz="0.050000 0 -0.055000" rpy="0 0 0"/>
       <geometry>
-        <box size="0.012000 0.008000 0.110000"/>
+        <box size="0.012000 0.025000 0.110000"/>
       </geometry>
       <material name="">
         <color rgba="0.35 0.35 0.38 1.0"/>
@@ -382,13 +385,13 @@
     <collision>
       <origin xyz="0.050000 0 -0.055000" rpy="0 0 0"/>
       <geometry>
-        <box size="0.012000 0.008000 0.110000"/>
+        <box size="0.012000 0.025000 0.110000"/>
       </geometry>
     </collision>
     <visual>
       <origin xyz="-0.050000 0 -0.055000" rpy="0 0 0"/>
       <geometry>
-        <box size="0.012000 0.008000 0.110000"/>
+        <box size="0.012000 0.025000 0.110000"/>
       </geometry>
       <material name="">
         <color rgba="0.35 0.35 0.38 1.0"/>
@@ -397,22 +400,23 @@
     <collision>
       <origin xyz="-0.050000 0 -0.055000" rpy="0 0 0"/>
       <geometry>
-        <box size="0.012000 0.008000 0.110000"/>
+        <box size="0.012000 0.025000 0.110000"/>
       </geometry>
     </collision>
+    <!-- Horizontal bar extended inward as hook (plate_right: +Y = inward) -->
     <visual>
-      <origin xyz="0 0 -0.116000" rpy="0 0 0"/>
+      <origin xyz="0 0.015000 -0.116000" rpy="0 0 0"/>
       <geometry>
-        <box size="0.100000 0.012000 0.012000"/>
+        <box size="0.100000 0.042000 0.015000"/>
       </geometry>
       <material name="">
         <color rgba="0.40 0.40 0.43 1.0"/>
       </material>
     </visual>
     <collision>
-      <origin xyz="0 0 -0.116000" rpy="0 0 0"/>
+      <origin xyz="0 0.015000 -0.116000" rpy="0 0 0"/>
       <geometry>
-        <box size="0.100000 0.012000 0.012000"/>
+        <box size="0.100000 0.042000 0.015000"/>
       </geometry>
     </collision>
     <visual>

@@ -13,9 +13,11 @@ import torch
 import math
 from typing import Any
 
-from omni.isaac.lab.envs import DirectRLEnv
-from omni.isaac.lab.assets import Articulation
-import omni.isaac.lab.utils.math as math_utils
+from isaaclab.envs import DirectRLEnv
+from isaaclab.assets import Articulation, RigidObject
+from isaaclab.markers import VisualizationMarkers
+from isaaclab.markers import CUBOID_MARKER_CFG
+import isaaclab.utils.math as math_utils
 
 from .env_cfg import GripperDroneEnvCfg, Stage
 from controllers.drone_ctrl import AttitudeController, quat_to_rot_matrix
@@ -46,8 +48,20 @@ class GripperDroneEnv(DirectRLEnv):
         self.plate_left_id, _ = self.robot.find_bodies("plate_left")
         self.plate_right_id, _ = self.robot.find_bodies("plate_right")
 
+        # --- Runtime validation: ensure fixed joints were NOT merged ---
+        assert len(self.motor_body_ids) == 4, (
+            f"Expected 4 motor bodies, found {len(self.motor_body_ids)}. "
+            f"Ensure merge_fixed_joints=False in UrdfFileCfg."
+        )
+        assert len(self.base_body_id) == 1, (
+            f"Expected 1 base_link body, found {len(self.base_body_id)}."
+        )
+
         # Joint indices for gripper plates
         self.plate_joint_ids, _ = self.robot.find_joints("plate_joint_.*")
+
+        # Reference to grasp object (always present in unified 31D architecture)
+        self.grasp_object = self.scene.rigid_objects["grasp_object"]
 
         # Number of bodies for force buffers
         self.num_bodies = self.robot.num_bodies
@@ -60,8 +74,10 @@ class GripperDroneEnv(DirectRLEnv):
 
         # --- State buffers ---
         self.goal_pos = torch.zeros(self.num_envs, 3, device=self.device)
-        self.prev_action = torch.zeros(self.num_envs, self.cfg.num_actions, device=self.device)
+        self.raw_actions = torch.zeros(self.num_envs, self.cfg.action_space, device=self.device)
+        self.prev_action = torch.zeros(self.num_envs, self.cfg.action_space, device=self.device)
         self.step_count = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
+        self.prev_pos_err = torch.zeros(self.num_envs, device=self.device)  # for progress reward
 
         # External force/torque buffers (applied to all bodies)
         self.ext_forces = torch.zeros(self.num_envs, self.num_bodies, 3, device=self.device)
@@ -76,46 +92,41 @@ class GripperDroneEnv(DirectRLEnv):
         self.payload_mass = torch.zeros(self.num_envs, device=self.device)
         self.motor_kf_scale = torch.ones(self.num_envs, device=self.device)
 
-        # Observation normalization (running stats)
-        self.obs_mean = torch.zeros(self.cfg.num_observations, device=self.device)
-        self.obs_var = torch.ones(self.cfg.num_observations, device=self.device)
-        self.obs_count = 1e-4
+        # NOTE: Observation normalization is handled by SKRL's RunningStandardScaler
+        # in the PPO agent config. Do NOT normalize here to avoid double normalization.
 
-        # --- Stage 3+ state ---
-        if self.cfg.stage.value >= Stage.GRASPING.value:
-            self.object_pos = torch.zeros(self.num_envs, 3, device=self.device)
-            self.object_mass = torch.zeros(self.num_envs, device=self.device)
-            self.is_grasped = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
-            self.was_grasped = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        # --- Object/grasping state (always initialized for unified 31D obs) ---
+        self.object_pos = torch.zeros(self.num_envs, 3, device=self.device)
+        self.object_mass = torch.zeros(self.num_envs, device=self.device)
+        self.is_grasped = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self.was_grasped = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self.lift_count = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
+        self.object_init_z = torch.zeros(self.num_envs, device=self.device)  # ground rest height
+        self.contain_hold_count = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
+
+
+        # --- Goal visualization marker ---
+        marker_cfg = CUBOID_MARKER_CFG.copy()
+        marker_cfg.markers["cuboid"].size = (0.1, 0.1, 0.1)
+        marker_cfg.prim_path = "/Visuals/Command/goal_position"
+        self.goal_marker = VisualizationMarkers(marker_cfg)
 
         # --- Action scaling ---
         self._setup_action_scaling()
 
     def _setup_action_scaling(self):
-        """Define action space scaling from [-1, 1] to physical units."""
-        # [ax, ay, az]: [-8, 8] m/s^2
-        # [wx, wy, wz]: [-3, 3] rad/s
-        # [yaw_ref]:    [-pi, pi] rad
-        # [gripper]:    [-5deg, 50deg] = [-0.087, 0.873] rad
+        """Define action space scaling from [-1, 1] to physical units.
 
+        Always 8D: [ax, ay, az, wx, wy, wz, yaw_ref, gripper].
+        """
         self.action_low = torch.tensor(
-            [-8.0, -8.0, -8.0, -3.0, -3.0, -3.0, -math.pi],
+            [-8.0, -8.0, -8.0, -3.0, -3.0, -3.0, -math.pi, -0.087266],
             device=self.device,
         )
         self.action_high = torch.tensor(
-            [8.0, 8.0, 8.0, 3.0, 3.0, 3.0, math.pi],
+            [8.0, 8.0, 8.0, 3.0, 3.0, 3.0, math.pi, 0.872665],
             device=self.device,
         )
-
-        if self.cfg.num_actions == 8:
-            self.action_low = torch.cat([
-                self.action_low,
-                torch.tensor([-0.087266], device=self.device),
-            ])
-            self.action_high = torch.cat([
-                self.action_high,
-                torch.tensor([0.872665], device=self.device),
-            ])
 
     def _scale_action(self, raw_action: torch.Tensor) -> torch.Tensor:
         """Scale raw [-1, 1] policy output to physical action space."""
@@ -130,16 +141,18 @@ class GripperDroneEnv(DirectRLEnv):
         self.robot = Articulation(self.cfg.scene.robot)
         self.scene.articulations["robot"] = self.robot
 
-        # Ground plane is auto-spawned from scene config
-        self.cfg.scene.ground.func(
-            "/World/ground",
-            self.cfg.scene.ground,
-        )
+        # Grasp object for Stage 3+: InteractiveScene auto-creates RigidObject
+        # from the GripperDroneSceneCfg.grasp_object field. No manual creation needed.
+
+        # Ground plane via TerrainImporter (following Crazyflie example pattern)
+        self.cfg.terrain.num_envs = self.scene.cfg.num_envs
+        self.cfg.terrain.env_spacing = self.scene.cfg.env_spacing
+        self._terrain = self.cfg.terrain.class_type(self.cfg.terrain)
 
         # Clone environments
         self.scene.clone_environments(copy_from_source=False)
 
-        # Filter collisions (optional: disable self-collision between arms and body)
+        # Filter collisions
         self.scene.filter_collisions(global_prim_paths=["/World/ground"])
 
     # ========================================================================
@@ -148,25 +161,28 @@ class GripperDroneEnv(DirectRLEnv):
 
     def _pre_physics_step(self, actions: torch.Tensor):
         """Process RL actions. Called once per RL step (150 Hz)."""
+        # Store previous action BEFORE overwriting with current (used in reward smoothness)
+        self.prev_action = self.raw_actions.clone()
         self.raw_actions = actions.clone()
         self.scaled_actions = self._scale_action(actions)
 
-        # Gripper plate commands (stage 3+)
-        if self.cfg.num_actions == 8:
-            gripper_cmd = self.scaled_actions[:, 7]
-            # Apply to both plates (symmetric)
-            plate_targets = torch.stack([gripper_cmd, gripper_cmd], dim=-1)
-            self.robot.set_joint_position_target(plate_targets, joint_ids=self.plate_joint_ids)
+        # Gripper plate commands (always 8D action space)
+        if self.cfg.lock_gripper:
+            # Stage 1: gripper locked fully open
+            gripper_cmd = torch.full((self.num_envs,), 0.873, device=self.device)
         else:
-            # Lock plates at 45 deg (landing config)
-            landing_angle = 0.785398  # 45 deg
-            plate_targets = torch.full(
-                (self.num_envs, 2), landing_angle, device=self.device,
-            )
-            self.robot.set_joint_position_target(plate_targets, joint_ids=self.plate_joint_ids)
+            # Stage 2+: policy controls gripper
+            gripper_cmd = self.scaled_actions[:, 7]
+        plate_targets = torch.stack([gripper_cmd, gripper_cmd], dim=-1)
+        self.robot.set_joint_position_target(plate_targets, joint_ids=self.plate_joint_ids)
 
     def _apply_action(self):
-        """Apply forces/torques to robot. Called every simulation step (300 Hz)."""
+        """Apply forces/torques to robot. Called every simulation step (300 Hz).
+
+        IMPORTANT: Isaac Lab's set_external_force_and_torque() expects forces in each
+        body's LOCAL frame (not world frame). Motor forces are already in body frame.
+        World-frame disturbances (wind, gravity) must be rotated into body frame via R^T.
+        """
         # Extract flight commands
         accel_cmd_b = self.scaled_actions[:, :3]
         rate_cmd_b = self.scaled_actions[:, 3:6]
@@ -186,31 +202,47 @@ class GripperDroneEnv(DirectRLEnv):
             dt=self.cfg.sim.dt,
         )
 
-        # Transform motor forces from body frame to world frame
-        R = quat_to_rot_matrix(quat_w)  # (N, 3, 3)
-
         self.ext_forces.zero_()
         self.ext_torques.zero_()
 
+        # Domain randomization: scale motor thrust by k_f scale per env
+        kf_scale = self.motor_kf_scale.unsqueeze(-1).unsqueeze(-1)  # (N, 1, 1)
+        forces_b = forces_b * kf_scale
+        torques_b = torques_b * kf_scale
+
+        # Motor forces/torques are already in body-local frame — apply directly
         for i in range(4):
             motor_id = self.motor_body_ids[i]
-            # Transform force to world frame
-            f_world = torch.bmm(R, forces_b[:, i:i+1, :].transpose(1, 2)).squeeze(-1)
-            t_world = torch.bmm(R, torques_b[:, i:i+1, :].transpose(1, 2)).squeeze(-1)
-            self.ext_forces[:, motor_id, :] = f_world
-            self.ext_torques[:, motor_id, :] = t_world
+            self.ext_forces[:, motor_id, :] = forces_b[:, i, :]
+            self.ext_torques[:, motor_id, :] = torques_b[:, i, :]
 
-        # Add wind disturbance to base_link
+        # --- World-frame disturbances → transform to body frame for base_link ---
+        # Accumulate all world-frame forces, then rotate once with R^T
+        world_force = torch.zeros(self.num_envs, 3, device=self.device)
+
+        # Mass scale: extra gravity from mass variation
+        nominal_mass = 1.080
+        world_force[:, 2] -= (self.mass_scale - 1.0) * nominal_mass * 9.81
+
+        # Wind disturbance (world frame)
         self._update_wind()
-        self.ext_forces[:, self.base_body_id[0], :] += self.wind_force
+        world_force += self.wind_force
 
-        # Apply payload weight if grasped (stage 3+)
-        if self.cfg.stage.value >= Stage.GRASPING.value:
-            payload_weight = self.payload_mass * 9.81
-            self.ext_forces[:, self.base_body_id[0], 2] -= payload_weight * self.is_grasped.float()
+        # Payload weight: physics-based grasping handles this through contact forces.
+        # Box has disable_gravity=True, so when held by gripper plates, the drone
+        # carries the box mass through PhysX contact (no manual force needed).
+
+        # Rotate world → body frame: f_body = R^T @ f_world
+        R = quat_to_rot_matrix(quat_w)  # (N, 3, 3)
+        body_force = torch.bmm(R.transpose(1, 2), world_force.unsqueeze(-1)).squeeze(-1)
+        self.ext_forces[:, self.base_body_id[0], :] += body_force
 
         # Apply to simulation
         self.robot.set_external_force_and_torque(self.ext_forces, self.ext_torques)
+
+        # Physics-based grasping: NO teleport. PhysX handles contact between
+        # gripper plates and box. The policy must physically close the plates
+        # around the object to hold it.
 
     def _update_wind(self):
         """Update slowly-varying wind disturbance."""
@@ -227,10 +259,15 @@ class GripperDroneEnv(DirectRLEnv):
     # ========================================================================
 
     def _get_observations(self) -> dict[str, torch.Tensor]:
-        """Compute observation tensor.
+        """Compute observation tensor — fully gripper-centric.
 
-        Stage 1-2: 23D = [v_b(3), w_b(3), R(9), p_goal_b(3), p_err_w(3), prev_action_xy(2)]
-        Stage 3-5: 31D = above + [theta_plates(2), p_obj_b(3), grasp_flag(1), payload_est(1), d_obj(1)]
+        All position/velocity observations reference the GRIPPER center (14.85cm below body),
+        not the drone body. This ensures observation-reward consistency: the policy sees
+        "where is the target relative to my gripper" and is rewarded for gripper precision.
+
+        31D = [gripper_vel_b(3), ang_vel_b(3), R(9), p_goal_g(3), p_err_g_w(3),
+               prev_action_xy(2), theta_plates(2), p_obj_g(3), grasp_flag(1),
+               payload_est(1), d_obj_g(1)]
         """
         # Base state
         pos_w = self.robot.data.root_pos_w                # (N, 3)
@@ -239,95 +276,81 @@ class GripperDroneEnv(DirectRLEnv):
         ang_vel_b = self.robot.data.root_ang_vel_b         # (N, 3)
         R = quat_to_rot_matrix(quat_w)                     # (N, 3, 3)
 
-        # Goal in body frame: p_goal_b = R^T @ (p_goal - p_body)
-        p_err_w = self.goal_pos - pos_w
-        p_goal_b = torch.bmm(R.transpose(1, 2), p_err_w.unsqueeze(-1)).squeeze(-1)
+        # --- Gripper position in world frame ---
+        gripper_offset_b = torch.tensor([0.0, 0.0, -0.08], device=self.device)
+        gripper_offset_w = torch.bmm(
+            R, gripper_offset_b.expand(self.num_envs, 3).unsqueeze(-1)
+        ).squeeze(-1)
+        gripper_pos_w = pos_w + gripper_offset_w
+
+        # --- Gripper velocity in body frame ---
+        # v_gripper = v_body + omega × r_offset (in body frame)
+        gripper_vel_b = vel_b.clone()
+        gripper_vel_b[:, 0] -= ang_vel_b[:, 1] * 0.08  # vx -= wy * r
+        gripper_vel_b[:, 1] += ang_vel_b[:, 0] * 0.08  # vy += wx * r
+        # vz unchanged (offset is purely along z in body frame)
+
+        # --- Goal relative to gripper ---
+        p_err_g_w = self.goal_pos - gripper_pos_w  # world frame: gripper→goal
+        p_goal_g = torch.bmm(R.transpose(1, 2), p_err_g_w.unsqueeze(-1)).squeeze(-1)
 
         # Flatten rotation matrix to 9D
         R_flat = R.reshape(self.num_envs, 9)
 
         # Add sensor noise
-        vel_b_noisy = vel_b + self.cfg.domain_rand.vel_noise_std * torch.randn_like(vel_b)
-        p_err_w_noisy = p_err_w + self.cfg.domain_rand.pos_noise_std * torch.randn_like(p_err_w)
-        p_goal_b_noisy = torch.bmm(
+        gripper_vel_b_noisy = gripper_vel_b + self.cfg.domain_rand.vel_noise_std * torch.randn_like(gripper_vel_b)
+        p_err_g_w_noisy = p_err_g_w + self.cfg.domain_rand.pos_noise_std * torch.randn_like(p_err_g_w)
+        p_goal_g_noisy = torch.bmm(
             R.transpose(1, 2),
-            (p_err_w_noisy).unsqueeze(-1),
+            p_err_g_w_noisy.unsqueeze(-1),
         ).squeeze(-1)
 
-        obs_parts = [
-            vel_b_noisy,            # (N, 3)
-            ang_vel_b,              # (N, 3)
-            R_flat,                 # (N, 9)
-            p_goal_b_noisy,         # (N, 3)
-            p_err_w_noisy,          # (N, 3)
-            self.prev_action[:, :2],  # (N, 2) previous accel XY
-        ]
+        # --- Always 31D: unified gripper-centric architecture ---
 
-        # Stage 3+ additional observations
-        if self.cfg.stage.value >= Stage.GRASPING.value:
-            # Plate joint angles, normalized to [-1, 1]
-            joint_pos = self.robot.data.joint_pos[:, self.plate_joint_ids]  # (N, 2)
-            # Normalize: range is [-0.087, 0.873], center at 0.393, half-range 0.48
-            theta_norm = (joint_pos - 0.393) / 0.48
+        # Update object position from physics
+        self.object_pos[:] = self.grasp_object.data.root_pos_w
 
-            # Object position in body frame
-            p_obj_err = self.object_pos - pos_w
-            p_obj_b = torch.bmm(R.transpose(1, 2), p_obj_err.unsqueeze(-1)).squeeze(-1)
-            # Add detection noise
-            p_obj_b += self.cfg.domain_rand.obj_detection_noise_std * torch.randn_like(p_obj_b)
+        # Plate joint angles, normalized to [-1, 1]
+        joint_pos = self.robot.data.joint_pos[:, self.plate_joint_ids]  # (N, 2)
+        theta_norm = (joint_pos - 0.393) / 0.48
 
-            # Grasp flag
-            grasp_flag = self.is_grasped.float().unsqueeze(-1)
+        # Object position relative to gripper (gripper frame)
+        p_obj_err_g = self.object_pos - gripper_pos_w
+        p_obj_g = torch.bmm(R.transpose(1, 2), p_obj_err_g.unsqueeze(-1)).squeeze(-1)
+        p_obj_g += self.cfg.domain_rand.obj_detection_noise_std * torch.randn_like(p_obj_g)
 
-            # Payload mass estimate (noisy)
-            payload_est = (self.payload_mass + 0.02 * torch.randn(self.num_envs, device=self.device)).unsqueeze(-1)
+        # Grasp flag, payload estimate, distance from gripper to object
+        grasp_flag = self.is_grasped.float().unsqueeze(-1)
+        payload_est = (self.payload_mass + 0.02 * torch.randn(self.num_envs, device=self.device)).unsqueeze(-1)
+        d_obj_g = torch.norm(p_obj_err_g, dim=-1, keepdim=True)
 
-            # Distance to object
-            d_obj = torch.norm(p_obj_err, dim=-1, keepdim=True)
+        obs = torch.cat([
+            gripper_vel_b_noisy,          # (N, 3) gripper velocity in body frame
+            ang_vel_b,                    # (N, 3) angular velocity (same for rigid body)
+            R_flat,                       # (N, 9) rotation matrix (same for rigid body)
+            p_goal_g_noisy,               # (N, 3) goal in gripper frame
+            p_err_g_w_noisy,              # (N, 3) gripper→goal error in world frame
+            self.prev_action[:, :2],      # (N, 2) previous action xy
+            theta_norm,                   # (N, 2) plate angles
+            p_obj_g,                      # (N, 3) object in gripper frame
+            grasp_flag,                   # (N, 1) grasped flag
+            payload_est,                  # (N, 1) payload estimate
+            d_obj_g,                      # (N, 1) gripper→object distance
+        ], dim=-1)  # Total: 31D
 
-            obs_parts.extend([
-                theta_norm,     # (N, 2)
-                p_obj_b,        # (N, 3)
-                grasp_flag,     # (N, 1)
-                payload_est,    # (N, 1)
-                d_obj,          # (N, 1)
-            ])
-
-        obs = torch.cat(obs_parts, dim=-1)
-
-        # Running normalization
-        self._update_obs_stats(obs)
-        obs_normalized = (obs - self.obs_mean) / (torch.sqrt(self.obs_var) + 1e-5)
-
-        self.prev_action = self.raw_actions.clone()
         self.step_count += 1
 
-        return {"policy": obs_normalized}
+        # Update goal marker visualization
+        self.goal_marker.visualize(self.goal_pos)
 
-    def _update_obs_stats(self, obs: torch.Tensor):
-        """Update running mean/variance for observation normalization."""
-        batch_mean = obs.mean(dim=0)
-        batch_var = obs.var(dim=0)
-        batch_count = obs.shape[0]
-
-        delta = batch_mean - self.obs_mean
-        total_count = self.obs_count + batch_count
-        new_mean = self.obs_mean + delta * batch_count / total_count
-        m_a = self.obs_var * self.obs_count
-        m_b = batch_var * batch_count
-        m2 = m_a + m_b + delta ** 2 * self.obs_count * batch_count / total_count
-        new_var = m2 / total_count
-
-        self.obs_mean = new_mean
-        self.obs_var = new_var
-        self.obs_count = total_count
+        return {"policy": obs}
 
     # ========================================================================
     # Rewards
     # ========================================================================
 
     def _get_rewards(self) -> torch.Tensor:
-        """Compute stage-appropriate rewards."""
+        """Compute stage-appropriate rewards. All gripper-centric."""
         pos_w = self.robot.data.root_pos_w
         vel_b = self.robot.data.root_lin_vel_b
         vel_w = self.robot.data.root_lin_vel_w
@@ -335,37 +358,104 @@ class GripperDroneEnv(DirectRLEnv):
         quat_w = self.robot.data.root_quat_w
         R = quat_to_rot_matrix(quat_w)
 
+        # Gripper position (used by ALL stages)
+        gripper_offset_b = torch.tensor([0.0, 0.0, -0.08], device=self.device)
+        gripper_offset_w = torch.bmm(
+            R, gripper_offset_b.expand(pos_w.shape[0], 3).unsqueeze(-1)
+        ).squeeze(-1)
+        gripper_pos_w = pos_w + gripper_offset_w
+
+        # Gripper velocity in body frame
+        gripper_vel_b = vel_b.clone()
+        gripper_vel_b[:, 0] -= ang_vel_b[:, 1] * 0.08
+        gripper_vel_b[:, 1] += ang_vel_b[:, 0] * 0.08
+
         if self.cfg.stage == Stage.BASIC_FLIGHT:
             rewards, info = compute_stage1_rewards(
-                pos_w=pos_w, vel_b=vel_b, rot_matrix=R,
-                goal_w=self.goal_pos, action=self.raw_actions,
-                prev_action=self.prev_action,
+                gripper_pos_w=gripper_pos_w, vel_b=gripper_vel_b, rot_matrix=R,
+                goal_w=self.goal_pos,
+                action=self.raw_actions[:, :7],
+                prev_action=self.prev_action[:, :7],
             )
 
-        elif self.cfg.stage == Stage.PRECISION_APPROACH:
-            target_vz = torch.full((self.num_envs,), self.cfg.descent_speed, device=self.device)
-            rewards, info = compute_stage2_rewards(
-                pos_w=pos_w, vel_w=vel_w, rot_matrix=R,
-                goal_w=self.goal_pos, target_vz=target_vz,
-                action=self.raw_actions, prev_action=self.prev_action,
-            )
+            # Note: goal regeneration is handled by eval script, not during training.
+            # Single goal per episode lets the policy learn precise approach.
 
-        elif self.cfg.stage == Stage.GRASPING:
-            self._check_grasp_conditions(pos_w, vel_w, R)
-            just_grasped = self.is_grasped & (~self.was_grasped)
-            just_dropped = (~self.is_grasped) & self.was_grasped
+        elif self.cfg.stage in (Stage.PRECISION_APPROACH, Stage.GRASPING):
+            # Containment reward: box face must be fully inside gripper opening
+            from rewards.reward_fn import exp_reward
 
-            plate_angles = self.robot.data.joint_pos[:, self.plate_joint_ids[0]]
-            plate_norm = (plate_angles - 0.393) / 0.48
+            pos_err = torch.norm(gripper_pos_w - self.object_pos, dim=-1)
+            xy_err = torch.norm(gripper_pos_w[:, :2] - self.object_pos[:, :2], dim=-1)
+            z_err = torch.abs(gripper_pos_w[:, 2] - self.object_pos[:, 2])
 
-            rewards, info = compute_stage3_rewards(
-                pos_w=pos_w, vel_w=vel_w, rot_matrix=R,
-                obj_pos_w=self.object_pos, plate_angle=plate_norm,
-                is_grasped=self.is_grasped, was_grasped=self.was_grasped,
-                just_grasped=just_grasped, just_dropped=just_dropped,
-                action=self.raw_actions, prev_action=self.prev_action,
-            )
-            self.was_grasped = self.is_grasped.clone()
+            # Box position in gripper local frame
+            box_offset_w = self.object_pos - gripper_pos_w
+            box_local = torch.bmm(R.transpose(1, 2), box_offset_w.unsqueeze(-1)).squeeze(-1)
+
+            # Gripper opening (plates fully open): X=±0.05m, Y=±0.062m
+            gripper_half_x = 0.05
+            gripper_half_y = 0.062
+            box_half = 0.04  # 8cm cube half-size
+
+            # Box edges in gripper local frame
+            box_min_x = box_local[:, 0] - box_half
+            box_max_x = box_local[:, 0] + box_half
+            box_min_y = box_local[:, 1] - box_half
+            box_max_y = box_local[:, 1] + box_half
+
+            # Overlap: how much of box face is inside gripper opening
+            overlap_x = (torch.min(torch.full_like(box_max_x, gripper_half_x), box_max_x)
+                       - torch.max(torch.full_like(box_min_x, -gripper_half_x), box_min_x)).clamp(min=0.0)
+            overlap_y = (torch.min(torch.full_like(box_max_y, gripper_half_y), box_max_y)
+                       - torch.max(torch.full_like(box_min_y, -gripper_half_y), box_min_y)).clamp(min=0.0)
+
+            box_area = (2 * box_half) ** 2  # 0.01 m²
+            overlap_xy = (overlap_x * overlap_y) / box_area  # 0~1
+
+            # Z gating: box must be within gripper's vertical capture range (strut length)
+            # box_local.z < 0: box is below gripper center (inside struts)
+            # box_local.z > -0.12: box is not too far below
+            z_in_range = ((box_local[:, 2] > -0.12) & (box_local[:, 2] < 0.02)).float()
+            overlap_ratio = overlap_xy * z_in_range
+
+            # Containment reward: overlap ratio + full containment bonus
+            full_contain = (overlap_ratio > 0.95).float()
+            r_contain = 15.0 * overlap_ratio + 10.0 * full_contain
+
+            # Z: gripper height relative to box (separate, simple)
+            r_z = 2.0 * torch.exp(-2.0 * z_err)
+
+            # Coarse approach: 3D distance (guides from far)
+            r_approach = 4.0 * torch.exp(-1.2 * pos_err)
+
+            # Velocity: slow near target
+            vel_norm = torch.norm(gripper_vel_b, dim=-1)
+            proximity = (1.0 - pos_err).clamp(min=0.0)
+            r_vel = exp_reward(vel_norm * proximity, 1.0, 2.0)
+
+            # Action penalties
+            action7 = self.raw_actions[:, :7]
+            prev7 = self.prev_action[:, :7]
+            r_smooth = -0.5 * torch.sum((action7 - prev7) ** 2, dim=-1)
+            r_mag = -0.1 * torch.sum(action7 ** 2, dim=-1)
+
+            # Track cumulative containment duration (3s = 450 steps at 150Hz)
+            is_contained = (overlap_ratio > 0.90)
+            self.contain_hold_count += is_contained.long()  # cumulative, no reset
+            # Success bonus when contained for 3 seconds total
+            contain_success = (self.contain_hold_count >= 450).float()
+            r_success = 50.0 * contain_success
+
+            rewards = r_approach + r_contain + r_z + r_vel + r_smooth + r_mag + r_success
+            info = {
+                "r_approach": r_approach, "r_contain": r_contain, "r_z": r_z,
+                "r_vel": r_vel, "r_smooth": r_smooth, "r_mag": r_mag,
+                "r_success": r_success,
+                "xy_err": xy_err, "alt_err": z_err,
+                "gripper_xy_offset": xy_err, "pos_error": pos_err,
+                "overlap_ratio": overlap_ratio, "full_contain": full_contain,
+            }
 
         elif self.cfg.stage == Stage.LOADED_FLIGHT:
             rewards, info = compute_stage4_rewards(
@@ -391,8 +481,19 @@ class GripperDroneEnv(DirectRLEnv):
             rewards = torch.zeros(self.num_envs, device=self.device)
             info = {}
 
-        # Log reward components
+        # Log reward components and metrics to TensorBoard via SKRL
+        # SKRL reads infos["episode"] dict — each value must be a scalar tensor
+        log_dict = {}
+        for k, v in info.items():
+            if isinstance(v, torch.Tensor):
+                log_dict[k] = torch.tensor(v.mean().item())
+        # Add key flight metrics
+        log_dict["mean_speed"] = torch.tensor(torch.norm(vel_w, dim=-1).mean().item())
+        log_dict["mean_tilt_deg"] = torch.tensor(
+            (torch.acos(R[:, 2, 2].clamp(-1, 1)) * 180 / 3.14159).mean().item()
+        )
         self.extras["log"] = {k: v.mean().item() for k, v in info.items()}
+        self.extras["episode"] = log_dict
 
         return rewards
 
@@ -402,34 +503,45 @@ class GripperDroneEnv(DirectRLEnv):
         vel_w: torch.Tensor,
         R: torch.Tensor,
     ):
-        """Check and update grasp state for Stage 3."""
-        d_obj = torch.norm(pos_w - self.object_pos, dim=-1)
-        speed = torch.norm(vel_w, dim=-1)
-        tilt = 1.0 - R[:, 2, 2]
+        """Check and update grasp state for Stage 3 (physics-based).
 
-        trigger = (
-            (d_obj < self.cfg.grasp_trigger_dist) &
-            (speed < self.cfg.grasp_trigger_speed) &
-            (tilt < self.cfg.grasp_trigger_tilt) &
-            (~self.is_grasped)
+        Physics-based grasp detection:
+        - Box is lifted off ground (z > init_z + 0.04m) = something is holding it
+        - Plates are closed (< 0.1 rad)
+        - Sustained for 15+ steps (0.1s) = not a momentary bounce
+        With gravity ON, box cannot float unless gripper holds it.
+
+        Drop detection: box returns to ground level.
+        """
+        # Use ACTUAL physics position of the box
+        actual_obj_pos = self.grasp_object.data.root_pos_w  # (N, 3)
+        self.object_pos[:] = actual_obj_pos
+
+        # Compute gripper position for reward/observation use
+        gripper_offset_b = torch.tensor([0.0, 0.0, -0.08], device=self.device)
+        gripper_offset_w = torch.bmm(
+            R, gripper_offset_b.expand(pos_w.shape[0], 3).unsqueeze(-1)
+        ).squeeze(-1)
+        gripper_pos_w = pos_w + gripper_offset_w
+
+        plate_angle = self.robot.data.joint_pos[:, self.plate_joint_ids[0]]
+        plates_closed = plate_angle < self.cfg.grasp_plate_threshold  # < 0.1 rad
+
+        # Sustained proximity grasp detection: gripper close + plates closed for 10+ steps
+        # Prevents false triggers from momentary contact/bumps
+        d_obj = torch.norm(gripper_pos_w - actual_obj_pos, dim=-1)
+        grasp_condition = (d_obj < 0.10) & plates_closed
+        self.lift_count = torch.where(
+            grasp_condition,
+            self.lift_count + 1,
+            torch.zeros_like(self.lift_count),
         )
+        trigger = (self.lift_count > 10) & (~self.is_grasped)
+        self.is_grasped |= trigger
 
-        if self.cfg.auto_grasp:
-            # Auto-grasp with probability
-            auto_mask = torch.rand(self.num_envs, device=self.device) < self.cfg.auto_grasp_prob
-            self.is_grasped |= (trigger & auto_mask)
-        else:
-            # Learned grasp: check if plate angle < threshold (closing)
-            plate_angle = self.robot.data.joint_pos[:, self.plate_joint_ids[0]]
-            plates_closed = plate_angle < 0.05  # near 0 deg
-            self.is_grasped |= (trigger & plates_closed)
-
-        # Check for drop (object falls if plates open while grasped)
+        # Drop detection: gripper moved away from object
         if self.is_grasped.any():
-            plate_angle = self.robot.data.joint_pos[:, self.plate_joint_ids[0]]
-            excessive_tilt = tilt > 0.5  # ~45 deg
-            plates_open = plate_angle > 0.3  # ~17 deg
-            drop = self.is_grasped & (excessive_tilt | plates_open)
+            drop = self.is_grasped & (d_obj > 0.20)
             self.is_grasped &= ~drop
 
     # ========================================================================
@@ -452,9 +564,10 @@ class GripperDroneEnv(DirectRLEnv):
 
         terminated = too_low | too_far | too_tilted
 
-        # Truncation (time limit)
+        # Truncation (time limit OR successful containment for 5s)
         max_steps = int(self.cfg.episode_length_s / (self.cfg.sim.dt * self.cfg.decimation))
-        truncated = self.step_count >= max_steps
+        contain_success = self.contain_hold_count >= 450  # 3s cumulative at 150Hz
+        truncated = (self.step_count >= max_steps) | contain_success
 
         return terminated, truncated
 
@@ -483,10 +596,29 @@ class GripperDroneEnv(DirectRLEnv):
         self.wind_phase[env_ids] = torch.rand(num_reset, 3, device=self.device) * 2.0 * math.pi
 
         # --- Reset robot state ---
-        # Random spawn position near (0, 0, 3)
-        default_pos = torch.tensor([0.0, 0.0, 3.0], device=self.device)
         spawn_offset = self.cfg.spawn_spread * (torch.rand(num_reset, 3, device=self.device) - 0.5)
         spawn_offset[:, 2] *= 0.5  # Less Z variation
+
+        # --- Reset grasping state and sample objects (all stages) ---
+        self.is_grasped[env_ids] = False
+        self.was_grasped[env_ids] = False
+        self.lift_count[env_ids] = 0
+        self.contain_hold_count[env_ids] = 0
+        self._sample_objects(env_ids)
+        self.object_init_z[env_ids] = self.object_pos[env_ids, 2]  # ground rest z
+
+        # Reset physical object in simulation
+        obj_state = torch.zeros(num_reset, 13, device=self.device)
+        obj_state[:, :3] = self.object_pos[env_ids]
+        obj_state[:, 3] = 1.0  # quaternion w
+        self.grasp_object.write_root_state_to_sim(obj_state, env_ids)
+
+        # --- Spawn drone ---
+        # Stage 1: z=3 (high altitude flight). Stage 2+: z=1.5 (ground box approach)
+        if self.cfg.stage.value >= Stage.PRECISION_APPROACH.value:
+            default_pos = torch.tensor([0.0, 0.0, 1.5], device=self.device)
+        else:
+            default_pos = torch.tensor([0.0, 0.0, 3.0], device=self.device)
         root_pos = default_pos + spawn_offset
 
         # Identity orientation with small random perturbation
@@ -516,15 +648,20 @@ class GripperDroneEnv(DirectRLEnv):
         # --- Reset task state ---
         self.step_count[env_ids] = 0
         self.prev_action[env_ids] = 0.0
+        self.raw_actions[env_ids] = 0.0
 
         # Sample new goal
         self._sample_goals(env_ids)
 
-        # Reset grasping state (stage 3+)
-        if self.cfg.stage.value >= Stage.GRASPING.value:
-            self.is_grasped[env_ids] = False
-            self.was_grasped[env_ids] = False
-            self._sample_objects(env_ids)
+        # Initialize prev_pos_err for progress reward (distance from spawn to goal)
+        self.prev_pos_err[env_ids] = torch.norm(
+            self.goal_pos[env_ids] - root_pos, dim=-1
+        )
+
+        # Stages 4 and 5 start WITH payload already grasped
+        if self.cfg.stage in (Stage.LOADED_FLIGHT, Stage.RELEASE):
+            self.is_grasped[env_ids] = True
+            self.was_grasped[env_ids] = True
 
     def _sample_goals(self, env_ids: torch.Tensor):
         """Sample goal positions based on current stage."""
@@ -537,15 +674,12 @@ class GripperDroneEnv(DirectRLEnv):
             self.goal_pos[env_ids] = torch.cat([xy, z], dim=-1)
 
         elif self.cfg.stage == Stage.PRECISION_APPROACH:
-            # Goal starts at approach altitude, will descend over episode
-            xy = self.cfg.goal_pos_range_xy * (torch.rand(n, 2, device=self.device) * 2.0 - 1.0)
-            z_low, z_high = self.cfg.target_z
-            z = torch.empty(n, 1, device=self.device).uniform_(z_low, z_high)
-            self.goal_pos[env_ids] = torch.cat([xy, z], dim=-1)
+            # Goal = object position (gripper-centric: gripper targets object directly)
+            self.goal_pos[env_ids] = self.object_pos[env_ids].clone()
 
         elif self.cfg.stage in (Stage.GRASPING, Stage.RELEASE):
-            # Goal is the object position (set in _sample_objects)
-            pass
+            # Goal = object position (consistent with Stage 2)
+            self.goal_pos[env_ids] = self.object_pos[env_ids].clone()
 
         elif self.cfg.stage == Stage.LOADED_FLIGHT:
             xy = self.cfg.delivery_range_xy * (torch.rand(n, 2, device=self.device) * 2.0 - 1.0)
@@ -553,13 +687,23 @@ class GripperDroneEnv(DirectRLEnv):
             self.goal_pos[env_ids] = torch.cat([xy, z], dim=-1)
 
     def _sample_objects(self, env_ids: torch.Tensor):
-        """Sample object positions and properties for grasping stages."""
+        """Sample object positions and properties. Called for ALL stages."""
         n = len(env_ids)
         xy = self.cfg.goal_pos_range_xy * 0.5 * (torch.rand(n, 2, device=self.device) * 2.0 - 1.0)
-        z_low, z_high = self.cfg.target_z
-        z = torch.empty(n, 1, device=self.device).uniform_(z_low, z_high)
+
+        if self.cfg.stage in (Stage.BASIC_FLIGHT, Stage.PRECISION_APPROACH, Stage.GRASPING):
+            # All approach/grasp stages: box on ground for consistency
+            z = torch.full((n, 1), 0.50, device=self.device)  # elevated: z=0.5m (no ground proximity issue)
+        else:
+            # Stage 4, 5: object at target altitude range
+            z_low, z_high = self.cfg.target_z
+            z = torch.empty(n, 1, device=self.device).uniform_(z_low, z_high)
+
         self.object_pos[env_ids] = torch.cat([xy, z], dim=-1)
-        self.goal_pos[env_ids] = self.object_pos[env_ids].clone()
+
+        # For Stage 3+, goal_pos is set to object position (overwritten by _sample_goals for Stage 1-2)
+        if self.cfg.stage in (Stage.GRASPING, Stage.RELEASE):
+            self.goal_pos[env_ids] = self.object_pos[env_ids].clone()
 
         m_low, m_high = self.cfg.object_mass_range
         self.object_mass[env_ids] = torch.empty(n, device=self.device).uniform_(m_low, m_high)

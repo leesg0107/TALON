@@ -81,9 +81,13 @@ class MotorModel:
         self.mixer_inv = torch.linalg.inv(self.mixer)
 
     def _hover_omega(self) -> float:
-        """Compute hover motor speed assuming 1.08 kg total mass."""
+        """Compute hover motor speed assuming 1.080 kg total mass (from URDF).
+
+        URDF mass breakdown (cameras removed):
+        base 0.65 + 4*arm 0.1 + 4*motor 0.22 + 2*plate 0.11 = 1.080 kg
+        """
         import math
-        hover_thrust_per_motor = 1.08 * 9.81 / 4.0
+        hover_thrust_per_motor = 1.080 * 9.81 / 4.0
         return math.sqrt(hover_thrust_per_motor / self.params.k_f)
 
     def reset(self, env_ids: torch.Tensor):
@@ -157,7 +161,7 @@ class AttitudeController:
         self,
         num_envs: int,
         device: torch.device,
-        total_mass: float = 1.08,
+        total_mass: float = 1.080,
         gravity: float = 9.81,
         kp_att: tuple[float, float, float] = (8.0, 8.0, 4.0),
         kd_att: tuple[float, float, float] = (1.5, 1.5, 0.8),
@@ -234,8 +238,12 @@ class AttitudeController:
         ], dim=-1)  # (N, 3) - vee map of skew-symmetric error
 
         # --- Step 4: PD body torque ---
+        # Lee et al. (2010): τ = -k_R·e_R - k_ω·e_ω
+        # att_err = e_R (positive when drone overshoots R_des)
+        # rate_err = ω_des - ω = -e_ω
+        # So: τ = -kp·att_err + kd·rate_err
         rate_err = rate_cmd_b - ang_vel_b
-        body_torque = self.kp * att_err + self.kd * rate_err  # (N, 3)
+        body_torque = -self.kp * att_err + self.kd * rate_err  # (N, 3)
 
         # --- Step 5: Allocate to motors ---
         wrench = torch.cat([

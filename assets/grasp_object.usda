@@ -1,0 +1,48 @@
+#usda 1.0
+(
+    defaultPrim = "Object"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "Object" (
+    prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+)
+{
+    float physics:mass = 0.2
+    point3f physics:centerOfMass = (0, 0, 0.025)
+    double3 xformOp:translate = (0, 0, 0)
+    uniform token[] xformOpOrder = ["xformOp:translate"]
+
+    def Cube "base" (
+        prepend apiSchemas = ["PhysicsCollisionAPI"]
+    )
+    {
+        color3f[] primvars:displayColor = [(0.8, 0.2, 0.2)]
+        float3 xformOp:scale = (0.07, 0.07, 0.03)
+        double3 xformOp:translate = (0, 0, 0.03)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+    }
+
+    def Cylinder "neck" (
+        prepend apiSchemas = ["PhysicsCollisionAPI"]
+    )
+    {
+        uniform token axis = "Z"
+        double height = 0.05
+        color3f[] primvars:displayColor = [(0.8, 0.3, 0.3)]
+        double radius = 0.015
+        double3 xformOp:translate = (0, 0, 0.085)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Cube "flange" (
+        prepend apiSchemas = ["PhysicsCollisionAPI"]
+    )
+    {
+        color3f[] primvars:displayColor = [(0.9, 0.3, 0.2)]
+        float3 xformOp:scale = (0.035, 0.035, 0.01)
+        double3 xformOp:translate = (0, 0, 0.12)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+    }
+}

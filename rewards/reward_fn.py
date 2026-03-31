@@ -29,42 +29,54 @@ class Stage1Weights:
     a_vel: float = 2.0
     w_level: float = 1.0
     a_level: float = 2.0
-    w_smooth: float = 0.5
-    a_smooth: float = 1.0
-    w_mag: float = 0.1
-    a_mag: float = 0.5
+    w_smooth: float = 0.1    # proportional penalty: -w * ||Δa||²
+    w_mag: float = 0.02      # proportional penalty: -w * ||a||²
     alive: float = 0.05
 
 
 @dataclass
 class Stage2Weights:
-    """Stage 2: Precision Approach - descend vertically with tight alignment."""
+    """Stage 2: Precision Approach - descend to object from above."""
+    # Horizontal alignment (two-scale: coarse for approach, fine for precision)
     w_align: float = 4.0
     a_align: float = 1.5
+    w_align_fine: float = 25.0   # ultra-fine: dominate all other rewards for precision
+    a_align_fine: float = 15.0   # very sharp: 0.08m → 0.30, 0.04m → 0.55
+    # Altitude: exp (precision) + linear (far-field gradient)
     w_alt: float = 2.0
     a_alt: float = 2.0
+    w_alt_linear: float = 0.5   # -w * alt_err (constant gradient for descent)
+    # Descent speed (gated by horizontal alignment)
     w_desc: float = 1.5
     a_desc: float = 1.5
-    w_level: float = 2.0
+    # Level attitude (reduced: allow tilting for XY correction, 2.0→1.0)
+    w_level: float = 1.0
     a_level: float = 3.0
+    # Horizontal speed suppression
     w_slow_xy: float = 1.0
     a_slow_xy: float = 3.0
-    w_smooth: float = 0.5
-    a_smooth: float = 1.0
-    w_mag: float = 0.1
-    a_mag: float = 0.5
+    # Smoothness: proportional penalty (exp vanishes, Stage 1 lesson)
+    w_smooth: float = 0.1       # -w * ||Δa||²
+    w_mag: float = 0.02         # -w * ||a||²
     alive: float = 0.05
 
 
 @dataclass
 class Stage3Weights:
-    """Stage 3: Grasping - approach, descend, close gripper."""
-    # Inherits Stage 2 for approach + adds grasping terms
+    """Stage 3: Grasping - approach, descend, close gripper (physics-based).
+
+    Gripper reward: continuous target tracking (no open/close discontinuity).
+    target = open when far, closed when near. Proportional error (not exp).
+    """
     approach: Stage2Weights = field(default_factory=Stage2Weights)
-    w_gripper_open: float = 0.3
+    # Gripper target tracking: weight = base + (near - base) * proximity
+    w_gripper_track_base: float = 0.5   # gripper reward weight at d >= 0.5m
+    w_gripper_track_near: float = 2.0   # gripper reward weight at d = 0m
+    gripper_target_dist: float = 0.4    # d at which target transitions fully open→closed
+    # Grasp rewards
     r_grasp_bonus: float = 10.0
-    w_hold: float = 2.0
-    r_drop_penalty: float = -10.0
+    w_hold: float = 12.0   # exceeds not-grasped total (~11) → grasped is more rewarding
+    r_drop_penalty: float = -50.0  # strong deterrent against dropping
 
 
 @dataclass
@@ -124,38 +136,38 @@ def tilt_angle(rot_matrix: torch.Tensor) -> torch.Tensor:
 
 
 def compute_stage1_rewards(
-    pos_w: torch.Tensor,          # (N, 3) body position world
-    vel_b: torch.Tensor,          # (N, 3) body linear velocity in body frame
+    gripper_pos_w: torch.Tensor,  # (N, 3) gripper center position world
+    vel_b: torch.Tensor,          # (N, 3) gripper velocity in body frame
     rot_matrix: torch.Tensor,     # (N, 3, 3) rotation matrix
     goal_w: torch.Tensor,         # (N, 3) goal position world
     action: torch.Tensor,         # (N, A) current action
     prev_action: torch.Tensor,    # (N, A) previous action
     w: Stage1Weights | None = None,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-    """Compute Stage 1 rewards. Returns total reward and info dict."""
+    """Compute Stage 1 rewards. Gripper-centric: measures gripper-to-goal distance."""
     w = w or Stage1Weights()
 
-    pos_err = torch.norm(pos_w - goal_w, dim=-1)
+    pos_err = torch.norm(gripper_pos_w - goal_w, dim=-1)
     vel_norm = torch.norm(vel_b, dim=-1)
 
     # Position reward
     r_pos = exp_reward(pos_err, w.w_pos, w.a_pos)
 
-    # Velocity penalty (proximity-gated)
+    # Velocity penalty (proximity-gated: deceleration near goal)
     proximity = (1.0 - pos_err).clamp(min=0.0)
     r_vel = exp_reward(vel_norm * proximity, w.w_vel, w.a_vel)
 
-    # Level flight reward (using 1 - R[2,2] instead of arccos for gradient stability)
+    # Level flight reward
     tilt = tilt_angle(rot_matrix)
     r_level = exp_reward(tilt, w.w_level, w.a_level)
 
-    # Action smoothness
-    action_diff = torch.norm(action - prev_action, dim=-1)
-    r_smooth = exp_reward(action_diff ** 2, w.w_smooth, w.a_smooth)
+    # Action smoothness: proportional penalty (exp vanishes for ||Δa||>1, gives no gradient)
+    action_diff_sq = torch.sum((action - prev_action) ** 2, dim=-1)
+    r_smooth = -0.1 * action_diff_sq
 
-    # Action magnitude
-    action_norm = torch.norm(action, dim=-1)
-    r_mag = exp_reward(action_norm ** 2, w.w_mag, w.a_mag)
+    # Action magnitude: proportional penalty
+    action_sq = torch.sum(action ** 2, dim=-1)
+    r_mag = -0.02 * action_sq
 
     # Alive bonus
     r_alive = torch.full_like(r_pos, w.alive)
@@ -176,54 +188,86 @@ def compute_stage1_rewards(
 
 
 def compute_stage2_rewards(
-    pos_w: torch.Tensor,           # (N, 3)
+    pos_w: torch.Tensor,           # (N, 3) body position world
     vel_w: torch.Tensor,           # (N, 3) world-frame velocity
     rot_matrix: torch.Tensor,      # (N, 3, 3)
-    goal_w: torch.Tensor,          # (N, 3) target position (at current descent altitude)
-    target_vz: torch.Tensor,       # (N,) desired descent velocity (negative)
+    gripper_pos_w: torch.Tensor,   # (N, 3) gripper center position world
+    obj_pos_w: torch.Tensor,       # (N, 3) object position world
     action: torch.Tensor,
     prev_action: torch.Tensor,
     w: Stage2Weights | None = None,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-    """Compute Stage 2 rewards."""
+    """Compute Stage 2 rewards: gripper-centric precision approach.
+
+    Key change: all alignment rewards measure GRIPPER-to-OBJECT distance,
+    not body-to-goal. The policy learns to position the gripper precisely,
+    accounting for tilt and moment arm automatically.
+
+    Reward structure:
+    - r_align: gripper XY alignment over object (two-scale)
+    - r_alt + r_alt_linear: gripper altitude to object altitude
+    - r_desc: descent speed tracking, gated by XY alignment
+    - r_level: level attitude (reduced weight, allows tilting for XY correction)
+    - r_slow_xy: horizontal speed suppression near target
+    - r_smooth, r_mag: proportional penalties
+    """
     w = w or Stage2Weights()
 
-    xy_err = torch.norm(pos_w[:, :2] - goal_w[:, :2], dim=-1)
-    alt_err = torch.abs(pos_w[:, 2] - goal_w[:, 2])
+    # Gripper-centric errors: measure gripper position relative to object
+    xy_err = torch.norm(gripper_pos_w[:, :2] - obj_pos_w[:, :2], dim=-1)
 
-    # Horizontal alignment
-    r_align = exp_reward(xy_err, w.w_align, w.a_align)
+    # Horizontal alignment: two-scale kernel (gripper XY over object)
+    r_align = exp_reward(xy_err, w.w_align, w.a_align) + exp_reward(xy_err, w.w_align_fine, w.a_align_fine)
 
-    # Altitude control
+    # --- Staged altitude: XY first, then descend ---
+    # When XY not aligned: target = staging height (0.3m above object)
+    # When XY aligned: target = object height (descend to grasp)
+    staging_offset = 0.30
+    xy_aligned = (xy_err < 0.10).float()
+    alt_target_z = obj_pos_w[:, 2] + staging_offset * (1.0 - xy_aligned)  # obj+0.3 or obj+0.0
+    alt_err = torch.abs(gripper_pos_w[:, 2] - alt_target_z)
+
+    # Altitude: gripper height relative to staged target
     r_alt = exp_reward(alt_err, w.w_alt, w.a_alt)
+    r_alt_linear = -w.w_alt_linear * alt_err
 
-    # Descent speed regulation (only active when aligned)
-    is_aligned = (xy_err < 0.1).float()
-    vz_err = torch.abs(vel_w[:, 2] - target_vz)
+    # BELOW-TARGET PENALTY: gripper should not go below current target
+    below_target = (alt_target_z - gripper_pos_w[:, 2]).clamp(min=0.0)
+    r_below = -5.0 * below_target
+
+    # Descent speed: only when XY aligned (descending phase)
+    desired_vz = -0.5 * (alt_err / 2.0).clamp(min=0.1, max=1.0)
+    is_aligned = xy_aligned
+    vz_err = torch.abs(vel_w[:, 2] - desired_vz)
     r_desc = exp_reward(vz_err, w.w_desc, w.a_desc) * is_aligned
 
-    # Level attitude (strengthened)
+    # Level attitude
     tilt = tilt_angle(rot_matrix)
     r_level = exp_reward(tilt, w.w_level, w.a_level)
 
-    # Horizontal speed suppression (inversely proportional to distance)
+    # Horizontal speed suppression near target
     v_xy = torch.norm(vel_w[:, :2], dim=-1)
     d_xy = xy_err.clamp(min=0.05)
-    r_slow_xy = exp_reward(v_xy / d_xy, w.w_slow_xy, w.a_slow_xy)
+    slow_gate = (1.0 - ((d_xy - 0.1) / 0.2).clamp(0.0, 1.0))
+    r_slow_xy = exp_reward(v_xy / d_xy, w.w_slow_xy, w.a_slow_xy) * slow_gate
 
-    # Smoothness and magnitude (same as stage 1)
-    action_diff = torch.norm(action - prev_action, dim=-1)
-    r_smooth = exp_reward(action_diff ** 2, w.w_smooth, w.a_smooth)
-    r_mag = exp_reward(torch.norm(action, dim=-1) ** 2, w.w_mag, w.a_mag)
+    # Smoothness: proportional penalty
+    action_diff_sq = torch.sum((action - prev_action) ** 2, dim=-1)
+    r_smooth = -w.w_smooth * action_diff_sq
+
+    # Action magnitude: proportional penalty
+    action_sq = torch.sum(action ** 2, dim=-1)
+    r_mag = -w.w_mag * action_sq
 
     r_alive = torch.full_like(r_align, w.alive)
 
-    total = r_align + r_alt + r_desc + r_level + r_slow_xy + r_smooth + r_mag + r_alive
+    total = r_align + r_alt + r_alt_linear + r_below + r_desc + r_level + r_slow_xy + r_smooth + r_mag + r_alive
 
     info = {
-        "r_align": r_align, "r_alt": r_alt, "r_desc": r_desc,
-        "r_level": r_level, "r_slow_xy": r_slow_xy, "xy_err": xy_err,
-        "alt_err": alt_err, "tilt": tilt,
+        "r_align": r_align, "r_alt": r_alt, "r_alt_linear": r_alt_linear,
+        "r_below": r_below, "r_desc": r_desc, "r_level": r_level,
+        "r_slow_xy": r_slow_xy, "r_smooth": r_smooth, "r_mag": r_mag,
+        "xy_err": xy_err, "alt_err": alt_err, "tilt": tilt,
     }
     return total, info
 
@@ -238,6 +282,7 @@ def compute_stage3_rewards(
     vel_w: torch.Tensor,
     rot_matrix: torch.Tensor,
     obj_pos_w: torch.Tensor,       # (N, 3) object position world
+    gripper_pos_w: torch.Tensor,   # (N, 3) gripper center position world
     plate_angle: torch.Tensor,     # (N,) normalized plate angle [-1, 1]
     is_grasped: torch.Tensor,      # (N,) bool: object currently grasped
     was_grasped: torch.Tensor,     # (N,) bool: was grasped before (for drop detection)
@@ -247,26 +292,39 @@ def compute_stage3_rewards(
     prev_action: torch.Tensor,
     w: Stage3Weights | None = None,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-    """Compute Stage 3 rewards."""
+    """Compute unified approach + grasp rewards (used for Stage 2 and 3)."""
     w = w or Stage3Weights()
 
-    # Compute approach-altitude goal: directly above object
-    approach_goal = obj_pos_w.clone()
-    approach_goal[:, 2] += 0.15  # 15cm above object for final approach
-
-    # Approach rewards (reuse stage 2 structure)
-    target_vz = torch.full((pos_w.shape[0],), -0.1, device=pos_w.device)
+    # Gripper-centric approach rewards: gripper→object directly (no +0.15m offset)
     r_approach, approach_info = compute_stage2_rewards(
-        pos_w, vel_w, rot_matrix, approach_goal, target_vz,
+        pos_w, vel_w, rot_matrix, gripper_pos_w, obj_pos_w,
         action[:, :7] if action.shape[-1] > 7 else action,
         prev_action[:, :7] if prev_action.shape[-1] > 7 else prev_action,
         w.approach,
     )
 
-    # Gripper preparation: keep open when far from object
-    d_obj = torch.norm(pos_w - obj_pos_w, dim=-1)
-    far_mask = ((~is_grasped) & (d_obj > 0.05)).float()
-    r_gripper_open = w.w_gripper_open * plate_angle.clamp(min=0.0) * far_mask
+    # Distance from gripper to object
+    d_obj = torch.norm(gripper_pos_w - obj_pos_w, dim=-1)
+
+    # --- Continuous gripper target tracking reward ---
+    # Target plate angle: open when far, closed when near (linear interpolation)
+    #   d >= 0.4m → target = +1.0 (fully open)
+    #   d = 0.0m  → target = -1.0 (fully closed)
+    alpha = (d_obj / w.gripper_target_dist).clamp(0.0, 1.0)
+    target_plate = 2.0 * alpha - 1.0
+
+    # Tracking error (proportional, NOT exp — avoids gradient vanishing)
+    angle_err = torch.abs(plate_angle - target_plate)
+
+    # Proximity-scaled weight: gentle when far, strong when near
+    proximity01 = (1.0 - d_obj / 0.5).clamp(0.0, 1.0)
+    w_gripper = w.w_gripper_track_base + (w.w_gripper_track_near - w.w_gripper_track_base) * proximity01
+
+    # Reward: w * (1 - err). Perfect tracking → +w. Max mismatch (err=2) → -w.
+    # Always active (not gated by is_grasped): provides dense gripper guidance
+    # Not grasped: "open when far, close when near"
+    # Grasped: "stay closed" (d_obj small → target = closed)
+    r_gripper_track = w_gripper * (1.0 - angle_err)
 
     # Grasp success bonus (one-time)
     r_grasp = w.r_grasp_bonus * just_grasped.float()
@@ -277,12 +335,16 @@ def compute_stage3_rewards(
     # Drop penalty (one-time)
     r_drop = w.r_drop_penalty * just_dropped.float()
 
-    total = r_approach + r_gripper_open + r_grasp + r_hold + r_drop
+    total = r_approach + r_gripper_track + r_grasp + r_hold + r_drop
+
+    # Gripper XY offset for monitoring (not used in reward)
+    gripper_xy_offset = torch.norm(gripper_pos_w[:, :2] - obj_pos_w[:, :2], dim=-1)
 
     info = {
         **approach_info,
-        "r_gripper_open": r_gripper_open, "r_grasp": r_grasp,
-        "r_hold": r_hold, "r_drop": r_drop, "d_obj": d_obj,
+        "r_gripper_track": r_gripper_track,
+        "gripper_xy_offset": gripper_xy_offset, "target_plate": target_plate,
+        "r_grasp": r_grasp, "r_hold": r_hold, "r_drop": r_drop, "d_obj": d_obj,
     }
     return total, info
 

@@ -17,7 +17,7 @@ import os
 import sys
 import argparse
 
-from omni.isaac.lab.app import AppLauncher
+from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser(description="Convert URDF to USD")
 AppLauncher.add_app_launcher_args(parser)
@@ -26,7 +26,7 @@ args.headless = True
 app_launcher = AppLauncher(args)
 simulation_app = app_launcher.app
 
-from omni.isaac.lab.sim.converters import UrdfConverter, UrdfConverterCfg
+from isaaclab.sim.converters import UrdfConverter, UrdfConverterCfg
 
 
 def main():

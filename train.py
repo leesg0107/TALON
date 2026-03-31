@@ -1,33 +1,20 @@
 """
 Gripper-Drone PPO Training Script
 
+Unified 31D observation + 8D action architecture for ALL stages.
+No dimension changes between stages — checkpoints load directly.
+
 Usage:
-    # Stage 1: Basic flight (from scratch)
+    # Stage 1: Basic flight (from scratch, 31D/8D, gripper locked)
     python train.py --stage 1 --num_envs 4096 --max_steps 500_000_000
 
-    # Stage 2: Precision approach (from Stage 1 checkpoint)
+    # Stage 2: Precision approach (from Stage 1, no dim change)
     python train.py --stage 2 --num_envs 4096 --max_steps 500_000_000 \
-        --checkpoint logs/stage1/best_agent.pt
+        --checkpoint logs/stage1/final_agent.pt
 
-    # Stage 3a: Auto-grasp close-range
+    # Stage 3a: Physics-based grasping (from Stage 2, gripper unlocked)
     python train.py --stage 3 --substage a --num_envs 4096 --max_steps 300_000_000 \
-        --checkpoint logs/stage2/best_agent.pt
-
-    # Stage 3b: Auto-grasp full-range
-    python train.py --stage 3 --substage b --num_envs 4096 --max_steps 500_000_000 \
-        --checkpoint logs/stage3a/best_agent.pt
-
-    # Stage 3c: Learned grasp
-    python train.py --stage 3 --substage c --num_envs 4096 --max_steps 800_000_000 \
-        --checkpoint logs/stage3b/best_agent.pt
-
-    # Stage 4: Loaded flight
-    python train.py --stage 4 --num_envs 4096 --max_steps 500_000_000 \
-        --checkpoint logs/stage1/best_agent.pt
-
-    # Stage 5: Release
-    python train.py --stage 5 --num_envs 4096 --max_steps 500_000_000 \
-        --checkpoint logs/stage3c/best_agent.pt
+        --checkpoint logs/stage2/final_agent.pt
 """
 
 from __future__ import annotations
@@ -37,7 +24,7 @@ import os
 import sys
 
 # Isaac Lab imports (must be before other imports for Omniverse)
-from omni.isaac.lab.app import AppLauncher
+from isaaclab.app import AppLauncher
 
 # Parse arguments before AppLauncher
 parser = argparse.ArgumentParser(description="Gripper-Drone PPO Training")
@@ -72,7 +59,7 @@ import gymnasium as gym
 
 from skrl.trainers.torch import SequentialTrainer
 from skrl.utils import set_seed
-from omni.isaac.lab_tasks.utils.wrappers.skrl import SkrlVecEnvWrapper
+from isaaclab_rl.skrl import SkrlVecEnvWrapper
 
 from envs.env_cfg import GripperDroneEnvCfg, Stage
 from envs.drone_env import GripperDroneEnv
@@ -82,16 +69,21 @@ from agents.ppo_cfg import build_ppo_agent
 def configure_stage3(cfg: GripperDroneEnvCfg, substage: str):
     """Configure Stage 3 sub-stage curriculum parameters."""
     if substage == "a":
-        # Close-range auto-grasp: start 0.2m above object
-        cfg.auto_grasp = True
-        cfg.auto_grasp_prob = 1.0
-        cfg.spawn_spread = 0.3
-        cfg.approach_start_z = (0.7, 1.7)  # just above objects
+        # Physics-based grasping: close-range, policy controls gripper
+        cfg.auto_grasp = False           # NO auto-grasp — policy must close plates
+        cfg.auto_grasp_prob = 0.0
+        cfg.spawn_spread = 0.3           # close range (0.3~0.8m above object)
+        cfg.approach_start_z = (0.7, 1.7)
+        cfg.grasp_trigger_dist = 0.15    # gripper-to-object distance for grasp detection
+        cfg.grasp_plate_threshold = 0.1  # plates must be < 0.1 rad to count as closed
+        cfg.episode_length_s = 40.0      # long episode: approach ~6s + hold ~34s → 85%+ hold
     elif substage == "b":
-        # Full-range auto-grasp: start 1-3m from object
-        cfg.auto_grasp = True
-        cfg.auto_grasp_prob = 1.0
+        # Full-range physics-based grasp: start 1-3m from object
+        cfg.auto_grasp = False
+        cfg.auto_grasp_prob = 0.0
         cfg.spawn_spread = 2.0
+        cfg.grasp_trigger_dist = 0.15
+        cfg.grasp_plate_threshold = 0.1
     elif substage == "c":
         # Learned grasp: auto-grasp probability decays during training
         cfg.auto_grasp = False  # Will be toggled during training
@@ -146,16 +138,19 @@ def main():
         env=env,
         device=device,
         stage=args.stage,
+        substage=args.substage,
         checkpoint_path=args.checkpoint,
     )
 
     # --- Configure trainer ---
-    # Convert max_steps to training iterations
-    steps_per_iter = args.num_envs * 24  # num_envs * rollout_length
-    max_iterations = args.max_steps // steps_per_iter
+    # SKRL SequentialTrainer counts timesteps as individual env.step() calls.
+    # Each env.step() advances all num_envs in parallel.
+    # Effective experience = timesteps * num_envs
+    # For 500M total experience with 4096 envs: timesteps = 500M / 4096 ≈ 122,070
+    timesteps = args.max_steps // args.num_envs
 
     trainer_cfg = {
-        "timesteps": max_iterations * steps_per_iter,
+        "timesteps": timesteps,
         "headless": True,
         "disable_progressbar": False,
         "close_environment_at_exit": True,
@@ -184,34 +179,37 @@ def main():
     simulation_app.close()
 
 
+
 def _setup_stage3c_curriculum(env, agent, trainer, max_steps):
     """Setup gradual auto-grasp probability decay for Stage 3c.
 
-    Probability schedule: 100% -> 50% -> 0% over training.
-    Implemented via a training callback that adjusts env config.
+    Probability schedule:
+      Phase 0: auto_grasp=True,  prob=1.0 (always auto-grasp)
+      Phase 1: auto_grasp=True,  prob=0.5 (50% auto, 50% learned)
+      Phase 2: auto_grasp=False, prob=0.0 (fully learned grasp)
+
+    Implemented by wrapping agent.post_interaction (called by SKRL trainer).
     """
     total_phases = 3
     steps_per_phase = max_steps // total_phases
     probs = [1.0, 0.5, 0.0]
 
-    original_post_step = getattr(trainer, "_post_interaction", None)
+    original_post_interaction = agent.post_interaction
 
-    def curriculum_callback(timestep):
+    def curriculum_post_interaction(timestep, timesteps):
         phase = min(int(timestep / steps_per_phase), total_phases - 1)
-        current_prob = probs[phase]
 
-        if hasattr(env.unwrapped, "cfg"):
-            env.unwrapped.cfg.auto_grasp_prob = current_prob
-            if current_prob == 0.0:
-                env.unwrapped.cfg.auto_grasp = False
+        unwrapped = env.unwrapped if hasattr(env, 'unwrapped') else env
+        unwrapped.cfg.auto_grasp = (phase < 2)
+        unwrapped.cfg.auto_grasp_prob = probs[phase]
 
-        if timestep % (steps_per_phase // 10) == 0:
-            print(f"  [Curriculum] Step {timestep:,}: auto_grasp_prob = {current_prob}")
+        if steps_per_phase > 0 and timestep % max(steps_per_phase // 10, 1) == 0:
+            print(f"  [Curriculum] Step {timestep:,}: phase={phase}, "
+                  f"auto_grasp={phase < 2}, prob={probs[phase]}")
 
-        if original_post_step:
-            original_post_step(timestep)
+        return original_post_interaction(timestep, timesteps)
 
-    trainer._post_interaction = curriculum_callback
+    agent.post_interaction = curriculum_post_interaction
 
 
 if __name__ == "__main__":

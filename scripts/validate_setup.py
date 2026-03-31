@@ -21,7 +21,7 @@ import argparse
 import os
 import time
 
-from omni.isaac.lab.app import AppLauncher
+from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser(description="Validate training setup")
 parser.add_argument("--num_envs", type=int, default=64)

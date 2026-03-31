@@ -19,7 +19,7 @@ from __future__ import annotations
 import argparse
 import os
 
-from omni.isaac.lab.app import AppLauncher
+from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser(description="Gripper-Drone Evaluation")
 parser.add_argument("--stage", type=int, required=True, choices=[1, 2, 3, 4, 5])
@@ -40,7 +40,7 @@ import numpy as np
 from collections import defaultdict
 
 from skrl.utils import set_seed
-from omni.isaac.lab_tasks.utils.wrappers.skrl import SkrlVecEnvWrapper
+from isaaclab_rl.skrl import SkrlVecEnvWrapper
 
 from envs.env_cfg import GripperDroneEnvCfg, Stage
 from envs.drone_env import GripperDroneEnv

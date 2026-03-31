@@ -1,0 +1,11 @@
+# Training runs & checkpoints
+runs/
+logs/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# IDE
+.vscode/
+.idea/
