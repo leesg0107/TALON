@@ -107,7 +107,7 @@ class GripperDroneEnv(DirectRLEnv):
 
         # --- Goal visualization marker ---
         marker_cfg = CUBOID_MARKER_CFG.copy()
-        marker_cfg.markers["cuboid"].size = (0.1, 0.1, 0.1)
+        marker_cfg.markers["cuboid"].size = (0.08, 0.08, 0.08)
         marker_cfg.prim_path = "/Visuals/Command/goal_position"
         self.goal_marker = VisualizationMarkers(marker_cfg)
 
@@ -168,10 +168,13 @@ class GripperDroneEnv(DirectRLEnv):
 
         # Gripper plate commands (always 8D action space)
         if self.cfg.lock_gripper:
-            # Stage 1: gripper locked fully open
+            # Default: gripper fully open
             gripper_cmd = torch.full((self.num_envs,), 0.873, device=self.device)
+            # Auto-close on sustained dock (contain_hold_count tracks cumulative containment)
+            docked_mask = self.contain_hold_count >= 300  # ~2s cumulative overlap>90%
+            gripper_cmd[docked_mask] = -0.087  # fully closed
         else:
-            # Stage 2+: policy controls gripper
+            # Policy controls gripper
             gripper_cmd = self.scaled_actions[:, 7]
         plate_targets = torch.stack([gripper_cmd, gripper_cmd], dim=-1)
         self.robot.set_joint_position_target(plate_targets, joint_ids=self.plate_joint_ids)
@@ -382,7 +385,9 @@ class GripperDroneEnv(DirectRLEnv):
             # Single goal per episode lets the policy learn precise approach.
 
         elif self.cfg.stage in (Stage.PRECISION_APPROACH, Stage.GRASPING):
-            # Containment reward: box face must be fully inside gripper opening
+            # Capture Column Containment reward
+            # Only reward when box is inside the vertical column defined by
+            # the gripper's open plates (plates tip = widest point) down to ground.
             from rewards.reward_fn import exp_reward
 
             pos_err = torch.norm(gripper_pos_w - self.object_pos, dim=-1)
@@ -393,68 +398,96 @@ class GripperDroneEnv(DirectRLEnv):
             box_offset_w = self.object_pos - gripper_pos_w
             box_local = torch.bmm(R.transpose(1, 2), box_offset_w.unsqueeze(-1)).squeeze(-1)
 
-            # Gripper opening (plates fully open): X=±0.05m, Y=±0.062m
-            gripper_half_x = 0.05
-            gripper_half_y = 0.062
-            box_half = 0.04  # 8cm cube half-size
+            # ---- Soft Capture Column: plates-tip opening projected downward ----
+            # Plates open at 50deg: tip Y = ±0.104m, X = ±0.05m (strut spacing)
+            column_half_x = 0.05    # strut X spacing
+            column_half_y = 0.104   # plate tip Y when fully open
+            box_half = 0.04         # 8cm cube half-size
 
-            # Box edges in gripper local frame
+            # Soft column score: 1.0 at center, 0.0 at edge, smooth gradient
+            x_contain = (1.0 - torch.abs(box_local[:, 0]) / column_half_x).clamp(0.0, 1.0)
+            y_contain = (1.0 - torch.abs(box_local[:, 1]) / column_half_y).clamp(0.0, 1.0)
+            z_below = (box_local[:, 2] < 0.02).float()  # box must be below gripper
+            column_score = x_contain * y_contain * z_below  # 0~1, smooth
+
+            # ---- Overlap at plates-tip level (precise containment) ----
+            gripper_half_x = 0.05   # strut X spacing
+            gripper_half_y = 0.062  # plate Y at strut level (narrower than tips)
+
             box_min_x = box_local[:, 0] - box_half
             box_max_x = box_local[:, 0] + box_half
             box_min_y = box_local[:, 1] - box_half
             box_max_y = box_local[:, 1] + box_half
 
-            # Overlap: how much of box face is inside gripper opening
             overlap_x = (torch.min(torch.full_like(box_max_x, gripper_half_x), box_max_x)
                        - torch.max(torch.full_like(box_min_x, -gripper_half_x), box_min_x)).clamp(min=0.0)
             overlap_y = (torch.min(torch.full_like(box_max_y, gripper_half_y), box_max_y)
                        - torch.max(torch.full_like(box_min_y, -gripper_half_y), box_min_y)).clamp(min=0.0)
 
-            box_area = (2 * box_half) ** 2  # 0.01 m²
-            overlap_xy = (overlap_x * overlap_y) / box_area  # 0~1
+            box_area = (2 * box_half) ** 2
+            overlap_xy = (overlap_x * overlap_y) / box_area
 
-            # Z gating: box must be within gripper's vertical capture range (strut length)
-            # box_local.z < 0: box is below gripper center (inside struts)
-            # box_local.z > -0.12: box is not too far below
+            # Z gating: box within strut vertical range
             z_in_range = ((box_local[:, 2] > -0.12) & (box_local[:, 2] < 0.02)).float()
             overlap_ratio = overlap_xy * z_in_range
 
-            # Containment reward: overlap ratio + full containment bonus
-            full_contain = (overlap_ratio > 0.95).float()
-            r_contain = 15.0 * overlap_ratio + 10.0 * full_contain
+            full_contain = (overlap_ratio > 0.90).float()
 
-            # Z: gripper height relative to box (separate, simple)
-            r_z = 2.0 * torch.exp(-2.0 * z_err)
+            # ---- Rewards: all independent, no cross-scaling ----
+            r_contain = 15.0 * overlap_ratio + 10.0 * full_contain  # independent: plates 안착
+            r_approach = 4.0 * torch.exp(-1.2 * pos_err.clamp(min=0.3))  # saturate at 0.3m: no hovering incentive near box
 
-            # Coarse approach: 3D distance (guides from far)
-            r_approach = 4.0 * torch.exp(-1.2 * pos_err)
+            # Column alignment: decomposed into independent axes + soft gate
+            # Soft gate: 0 at xy>0.25m, linear to 1.0 at xy<0.05m
+            approach_gate = ((0.25 - xy_err) / 0.20).clamp(0.0, 1.0)
+            r_x_align = 1.5 * x_contain * approach_gate   # X축 기둥 중심 정렬
+            r_y_align = 1.5 * y_contain * approach_gate   # Y축 기둥 중심 정렬
+            r_z_below = 2.0 * z_below * approach_gate     # 위에서 접근
 
-            # Velocity: slow near target
+            r_z = 2.0 * torch.exp(-2.0 * z_err)           # independent: 하강
+
+            # Fine approach: bridges 5-15cm gap where r_contain is weak
+            r_fine = 5.0 * torch.exp(-10.0 * xy_err) * approach_gate
+
+            # Stability rewards: ALWAYS active
             vel_norm = torch.norm(gripper_vel_b, dim=-1)
             proximity = (1.0 - pos_err).clamp(min=0.0)
             r_vel = exp_reward(vel_norm * proximity, 1.0, 2.0)
 
-            # Action penalties
             action7 = self.raw_actions[:, :7]
             prev7 = self.prev_action[:, :7]
             r_smooth = -0.5 * torch.sum((action7 - prev7) ** 2, dim=-1)
             r_mag = -0.1 * torch.sum(action7 ** 2, dim=-1)
 
-            # Track cumulative containment duration (3s = 450 steps at 150Hz)
+            # Success: cumulative 3s containment
             is_contained = (overlap_ratio > 0.90)
-            self.contain_hold_count += is_contained.long()  # cumulative, no reset
-            # Success bonus when contained for 3 seconds total
+            self.contain_hold_count += is_contained.long()
             contain_success = (self.contain_hold_count >= 450).float()
             r_success = 50.0 * contain_success
 
-            rewards = r_approach + r_contain + r_z + r_vel + r_smooth + r_mag + r_success
+            # Pedestal safety: stay above pedestal top
+            pedestal_top = 0.50
+            r_safe = 2.0 * (gripper_pos_w[:, 2] > pedestal_top).float()
+
+            # Urgency: time pressure to dock (0 if docked, increasing penalty if not)
+            max_steps = int(self.cfg.episode_length_s / (self.cfg.sim.dt * self.cfg.decimation))
+            progress = self.step_count.float() / max_steps
+            is_docked = (overlap_ratio > 0.5).float()
+            r_urgency = -2.0 * progress * (1.0 - is_docked)
+
+            r_column_total = r_x_align + r_y_align + r_z_below
+            rewards = r_approach + r_column_total + r_contain + r_fine + r_z + r_safe + r_urgency + r_vel + r_smooth + r_mag + r_success
             info = {
-                "r_approach": r_approach, "r_contain": r_contain, "r_z": r_z,
+                "r_approach": r_approach, "r_column": r_column_total, "r_contain": r_contain,
+                "r_safe": r_safe, "r_urgency": r_urgency,
+                "r_fine": r_fine, "r_z": r_z,
+                "r_x_align": r_x_align, "r_y_align": r_y_align, "r_z_below": r_z_below,
                 "r_vel": r_vel, "r_smooth": r_smooth, "r_mag": r_mag,
                 "r_success": r_success,
                 "xy_err": xy_err, "alt_err": z_err,
                 "gripper_xy_offset": xy_err, "pos_error": pos_err,
                 "overlap_ratio": overlap_ratio, "full_contain": full_contain,
+                "column_score": column_score, "approach_gate": approach_gate,
             }
 
         elif self.cfg.stage == Stage.LOADED_FLIGHT:
@@ -562,7 +595,11 @@ class GripperDroneEnv(DirectRLEnv):
         too_far = torch.norm(pos_w[:, :2], dim=-1) > self.cfg.max_distance
         too_tilted = tilt > max_tilt
 
-        terminated = too_low | too_far | too_tilted
+        # Box fell off pedestal (Stage 3 with dynamic box)
+        # Only terminate if gripper hasn't docked (if docked, box may be lifted)
+        box_fell = (self.object_pos[:, 2] < 0.45) & (self.contain_hold_count < 300)
+
+        terminated = too_low | too_far | too_tilted | box_fell
 
         # Truncation (time limit OR successful containment for 5s)
         max_steps = int(self.cfg.episode_length_s / (self.cfg.sim.dt * self.cfg.decimation))
@@ -693,13 +730,22 @@ class GripperDroneEnv(DirectRLEnv):
 
         if self.cfg.stage in (Stage.BASIC_FLIGHT, Stage.PRECISION_APPROACH, Stage.GRASPING):
             # All approach/grasp stages: box on ground for consistency
-            z = torch.full((n, 1), 0.50, device=self.device)  # elevated: z=0.5m (no ground proximity issue)
+            z = torch.full((n, 1), 0.54, device=self.device)  # on pedestal (top=0.50 + box_half=0.04)
         else:
             # Stage 4, 5: object at target altitude range
             z_low, z_high = self.cfg.target_z
             z = torch.empty(n, 1, device=self.device).uniform_(z_low, z_high)
 
         self.object_pos[env_ids] = torch.cat([xy, z], dim=-1)
+
+        # Move pedestal to match box XY position (if pedestal exists)
+        if hasattr(self.scene, 'rigid_objects') and 'pedestal' in self.scene.rigid_objects:
+            pedestal = self.scene.rigid_objects["pedestal"]
+            ped_state = pedestal.data.default_root_state[env_ids].clone()
+            ped_state[:, 0] = xy[:, 0]  # match box X
+            ped_state[:, 1] = xy[:, 1]  # match box Y
+            ped_state[:, 2] = 0.25      # pedestal center z
+            pedestal.write_root_state_to_sim(ped_state, env_ids)
 
         # For Stage 3+, goal_pos is set to object position (overwritten by _sample_goals for Stage 1-2)
         if self.cfg.stage in (Stage.GRASPING, Stage.RELEASE):

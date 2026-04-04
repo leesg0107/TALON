@@ -83,10 +83,10 @@ GRIPPER_DRONE_CFG = ArticulationCfg(
 GRASP_OBJECT_CFG = RigidObjectCfg(
     prim_path="/World/envs/env_.*/Object",
     spawn=sim_utils.CuboidCfg(
-        size=(0.08, 0.08, 0.08),  # 8cm cube
+        size=(0.08, 0.08, 0.08),  # 8cm cube (must match training)
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
-            kinematic_enabled=True,   # Fixed: box doesn't move when drone hits it
-            disable_gravity=False,
+            kinematic_enabled=False,  # Dynamic: box can be grasped and lifted
+            disable_gravity=False,    # Gravity ON: box sits on pedestal naturally
         ),
         mass_props=sim_utils.MassPropertiesCfg(mass=0.2),
         collision_props=sim_utils.CollisionPropertiesCfg(
@@ -102,7 +102,36 @@ GRASP_OBJECT_CFG = RigidObjectCfg(
             diffuse_color=(0.8, 0.2, 0.2),
         ),
     ),
-    init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 1.0)),
+    init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.54)),  # on pedestal (top=0.50 + box_half=0.04)
+)
+
+
+# ============================================================================
+# Pedestal (table/pillar for box to sit on)
+# ============================================================================
+
+PEDESTAL_CFG = RigidObjectCfg(
+    prim_path="/World/envs/env_.*/Pedestal",
+    spawn=sim_utils.CuboidCfg(
+        size=(0.30, 0.30, 0.50),  # 30x30cm top, 50cm tall
+        rigid_props=sim_utils.RigidBodyPropertiesCfg(
+            kinematic_enabled=True,  # Fixed: doesn't move
+        ),
+        mass_props=sim_utils.MassPropertiesCfg(mass=10.0),
+        collision_props=sim_utils.CollisionPropertiesCfg(
+            contact_offset=0.005,
+            rest_offset=0.0,
+        ),
+        physics_material=sim_utils.RigidBodyMaterialCfg(
+            static_friction=2.0,
+            dynamic_friction=2.0,
+            restitution=0.0,
+        ),
+        visual_material=sim_utils.PreviewSurfaceCfg(
+            diffuse_color=(0.5, 0.5, 0.5),
+        ),
+    ),
+    init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.25)),  # center at 0.25m → top at 0.50m
 )
 
 
@@ -112,7 +141,7 @@ GRASP_OBJECT_CFG = RigidObjectCfg(
 
 @configclass
 class GripperDroneSceneCfg(InteractiveSceneCfg):
-    """Scene with drone + grasp object (always present for unified 31D obs)."""
+    """Scene with drone + grasp object + pedestal."""
     num_envs: int = 4096
     env_spacing: float = 5.0
 
@@ -120,8 +149,11 @@ class GripperDroneSceneCfg(InteractiveSceneCfg):
     robot: ArticulationCfg = GRIPPER_DRONE_CFG
 
     # Grasp target: always present in all stages for consistent 31D observations.
-    # Stage 1: on ground (non-interfering). Stage 2+: at target height.
+    # Stage 1: on ground (non-interfering). Stage 2+: on pedestal.
     grasp_object: RigidObjectCfg = GRASP_OBJECT_CFG
+
+    # Pedestal: table/pillar for box to sit on (Stage 2+)
+    pedestal: RigidObjectCfg = PEDESTAL_CFG
 
 
 # ============================================================================
@@ -265,12 +297,12 @@ class GripperDroneEnvCfg(DirectRLEnvCfg):
         elif self.stage == Stage.PRECISION_APPROACH:
             self.lock_gripper = True   # Gripper locked open: focus on align
             self.domain_rand.payload_mass_range = (0.0, 0.0)
-            self.episode_length_s = 20.0  # Enough time for z=1.5→ground approach + hover
+            self.episode_length_s = 12.0  # Balance: enough time for precise docking
 
         elif self.stage == Stage.GRASPING:
-            self.lock_gripper = True   # Gripper locked open: focus on align only
+            self.lock_gripper = True   # Gripper locked open during approach; auto-close on dock
             self.domain_rand.payload_mass_range = (0.0, 0.0)
-            self.episode_length_s = 40.0
+            self.episode_length_s = 15.0
 
         elif self.stage == Stage.LOADED_FLIGHT:
             self.lock_gripper = False  # Holding payload
