@@ -26,7 +26,7 @@ env_wrapped = SkrlVecEnvWrapper(env)
 
 device = env.device
 agent = build_ppo_agent(env=env_wrapped, device=device, stage=3,
-                        checkpoint_path="logs/best_models/best_col_strong.pt")
+                        checkpoint_path="logs/best_models/best_fc34_loiter_tilt.pt")
 agent.set_running_mode("eval")
 
 num_envs = env.num_envs
@@ -166,11 +166,10 @@ for step in range(max_eval_steps):
             action[i, 7] = -1.0
         else:
             action[i, 7] = 1.0
-            if ov > 0.85:
+            if ov > 0.50:
                 align_count[i] += 1
-            else:
-                align_count[i] = 0
-            if align_count[i] > 20:
+            # No reset: cumulative, same as training
+            if align_count[i] > 300:  # cumulative ~2s, same as training
                 action[i, 7] = -1.0
                 gripper_closed[i] = True
                 if not docked[i]:

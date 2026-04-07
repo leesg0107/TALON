@@ -120,9 +120,10 @@ def main():
         substage = args.substage or "a"
         configure_stage3(env_cfg, substage)
 
-    # Stage 4: Enable payload mass randomization
+    # Stage 4: Dynamic box for real physics grasping
     if args.stage == 4:
-        env_cfg.domain_rand.payload_mass_range = (0.05, 0.5)
+        env_cfg.scene.grasp_object.spawn.rigid_props.kinematic_enabled = False
+        env_cfg.scene.grasp_object.spawn.rigid_props.disable_gravity = False
 
     # --- Create environment ---
     env = GripperDroneEnv(cfg=env_cfg)

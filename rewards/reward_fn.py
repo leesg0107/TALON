@@ -81,19 +81,30 @@ class Stage3Weights:
 
 @dataclass
 class Stage4Weights:
-    """Stage 4: Loaded Flight - fly to delivery with payload."""
-    w_pos: float = 4.0
-    a_pos: float = 1.0
-    w_stable: float = 2.5
-    a_stable: float = 2.0
-    w_level: float = 2.0
-    a_level: float = 3.0
-    w_hold: float = 1.0
-    w_smooth: float = 1.0
-    a_smooth: float = 1.0
-    w_gentle: float = 0.5
-    a_gentle: float = 2.0
-    alive: float = 0.05
+    """Stage 4: Loaded Flight with goal respawn.
+
+    Key design principle: ALL position-related rewards are ≤ 0 (shifted exp).
+    The ONLY positive reward is arrival bonus. This prevents hovering exploit
+    (sitting near goal forever) while maintaining dense gradient toward goal.
+
+    Reward ordering must satisfy: arrive > crash > hover-forever
+    - arrive: positive (bonuses exceed time cost)
+    - crash: zero (terminated, V=0)
+    - hover: negative (time cost with no arrivals)
+    """
+    # Time penalty: makes every step cost → drives toward arrival
+    time_penalty: float = -0.5
+    # Distance shaping: shifted exp, always ≤ 0, provides gradient toward goal
+    w_pos_shape: float = 0.5
+    a_pos_shape: float = 1.2
+    # Level flight: large enough that survive > crash (+0.6 - 0.5 = +0.1/step)
+    w_level: float = 0.6
+    a_level: float = 2.0
+    # Smoothness: proportional penalties
+    w_smooth: float = 0.1
+    w_mag: float = 0.02
+    # Arrival bonus: only positive goal-seeking reward
+    arrival_bonus: float = 200.0
 
 
 @dataclass
@@ -355,38 +366,48 @@ def compute_stage3_rewards(
 
 
 def compute_stage4_rewards(
-    pos_w: torch.Tensor,
-    vel_b: torch.Tensor,
-    ang_vel_b: torch.Tensor,
-    rot_matrix: torch.Tensor,
-    goal_w: torch.Tensor,
-    is_grasped: torch.Tensor,
-    action: torch.Tensor,
-    prev_action: torch.Tensor,
+    gripper_pos_w: torch.Tensor,   # (N, 3) gripper center position world
+    rot_matrix: torch.Tensor,      # (N, 3, 3) rotation matrix
+    goal_w: torch.Tensor,          # (N, 3) goal position world
+    action: torch.Tensor,          # (N, A) current action
+    prev_action: torch.Tensor,     # (N, A) previous action
     w: Stage4Weights | None = None,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-    """Compute Stage 4 rewards."""
+    """Compute Stage 4 rewards: loaded flight with goal respawn.
+
+    All position rewards ≤ 0 (shifted exp). Only arrival bonus is positive.
+    Ensures: arrive > crash > hover-forever.
+    """
     w = w or Stage4Weights()
 
-    pos_err = torch.norm(pos_w - goal_w, dim=-1)
-    ang_vel_norm = torch.norm(ang_vel_b, dim=-1)
+    pos_err = torch.norm(gripper_pos_w - goal_w, dim=-1)
+
+    # Time penalty: constant cost per step → drives toward faster arrival
+    r_time = torch.full_like(pos_err, w.time_penalty)
+
+    # Distance shaping: shifted exp kernel, always ≤ 0
+    # d=0 → 0, d=1.5 → -0.42. Provides gradient without free positive reward.
+    r_pos_shape = w.w_pos_shape * (torch.exp(-w.a_pos_shape * pos_err) - 1.0)
+
+    # Level flight: large enough that (r_time + r_level) > 0 → survive > crash
     tilt = tilt_angle(rot_matrix)
-    action_diff = torch.norm(action - prev_action, dim=-1)
-    accel_norm = torch.norm(action[:, :3], dim=-1)
-
-    r_pos = exp_reward(pos_err, w.w_pos, w.a_pos)
-    r_stable = exp_reward(ang_vel_norm, w.w_stable, w.a_stable)
     r_level = exp_reward(tilt, w.w_level, w.a_level)
-    r_hold = w.w_hold * is_grasped.float()
-    r_smooth = exp_reward(action_diff ** 2, w.w_smooth, w.a_smooth)
-    r_gentle = exp_reward(accel_norm ** 2, w.w_gentle, w.a_gentle)
-    r_alive = torch.full_like(r_pos, w.alive)
 
-    total = r_pos + r_stable + r_level + r_hold + r_smooth + r_gentle + r_alive
+    # Action smoothness: proportional penalty
+    action_diff_sq = torch.sum((action - prev_action) ** 2, dim=-1)
+    r_smooth = -w.w_smooth * action_diff_sq
+
+    # Action magnitude: proportional penalty
+    action_sq = torch.sum(action ** 2, dim=-1)
+    r_mag = -w.w_mag * action_sq
+
+    # Note: arrival bonus (+200) is applied in drone_env.py, not here
+    total = r_time + r_pos_shape + r_level + r_smooth + r_mag
 
     info = {
-        "r_pos": r_pos, "r_stable": r_stable, "r_level": r_level,
-        "r_hold": r_hold, "pos_error": pos_err,
+        "r_time": r_time, "r_pos_shape": r_pos_shape, "r_level": r_level,
+        "r_smooth": r_smooth, "r_mag": r_mag,
+        "pos_error": pos_err, "tilt": tilt,
     }
     return total, info
 

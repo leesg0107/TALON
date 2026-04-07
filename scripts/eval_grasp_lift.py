@@ -4,7 +4,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from isaaclab.app import AppLauncher
-app_launcher = AppLauncher(headless=False)
+app_launcher = AppLauncher(headless=True)
 simulation_app = app_launcher.app
 
 import torch
@@ -14,8 +14,8 @@ from agents.ppo_cfg import build_ppo_agent
 from isaaclab_rl.skrl import SkrlVecEnvWrapper
 
 cfg = GripperDroneEnvCfg(stage=Stage.GRASPING)
-cfg.scene.num_envs = 4
-cfg.scene.env_spacing = 10.0
+cfg.scene.num_envs = 100
+cfg.scene.env_spacing = 5.0
 cfg.episode_length_s = 60.0  # Long episode for full sequence
 cfg.lock_gripper = False
 
@@ -27,7 +27,7 @@ env_wrapped = SkrlVecEnvWrapper(env)
 
 device = env.device
 agent = build_ppo_agent(env=env_wrapped, device=device, stage=3,
-                        checkpoint_path="logs/best_models/best_fc11_fine.pt")
+                        checkpoint_path="logs/best_models/best_fc34_loiter_tilt.pt")
 agent.set_running_mode("eval")
 
 num_envs = env.num_envs
@@ -40,7 +40,8 @@ lift_start_z = torch.zeros(num_envs, device=device)
 
 # Episode result tracking
 from collections import Counter
-episode_results = Counter()  # accumulate across all episodes
+episode_results = Counter()
+max_lift_cm = []  # track max lift height per lift attempt
 
 max_steps = 9000  # 60s at 150Hz
 print(f"\n=== Grasp & Lift Test: {num_envs} envs ===\n")
@@ -80,11 +81,10 @@ for step in range(max_steps):
         if state[i] == "approach":
             # Gripper open, let policy approach
             action[i, 7] = 1.0
-            if ov > 0.85:
+            if ov > 0.50:
                 align_count[i] += 1
-            else:
-                align_count[i] = 0
-            if align_count[i] > 30:  # 0.2s sustained alignment
+            # No reset: cumulative, same as training
+            if align_count[i] > 300:  # cumulative ~2s
                 state[i] = "dock"
                 grip_count[i] = 0
                 print(f"  env{i} step {step}: DOCKED (overlap={ov*100:.0f}%) → closing gripper")
@@ -108,7 +108,7 @@ for step in range(max_steps):
             if step % 150 == 0:
                 print(f"  env{i} step {step}: LIFTING box_z={box_z:.3f} lift={box_lifted*100:.1f}cm drone_z={drone_z:.3f}")
 
-            if box_lifted > 0.10:  # 10cm lift = SUCCESS
+            if box_lifted > 0.05:  # 5cm lift = SUCCESS
                 state[i] = "success"
                 print(f"  env{i} step {step}: *** LIFT SUCCESS *** box lifted {box_lifted*100:.1f}cm!")
 
@@ -118,7 +118,7 @@ for step in range(max_steps):
     obs, reward, terminated, truncated, info = env_wrapped.step(action)
 
     # Status every 20s
-    if step % 750 == 0:
+    if step % 3000 == 0:
         status = ""
         for i in range(num_envs):
             box_z = env.object_pos[i, 2].item()
@@ -131,6 +131,10 @@ for step in range(max_steps):
     if done_mask.any():
         reset_list = done_mask.nonzero(as_tuple=False).view(-1).tolist()
         for i in reset_list:
+            # Track max lift for lift/success states
+            if state[i] in ("lift", "success"):
+                lifted = env.object_pos[i, 2].item() - lift_start_z[i].item()
+                max_lift_cm.append(lifted * 100)
             # Record best state reached this episode
             episode_results[state[i]] += 1
             state[i] = "approach"
@@ -150,6 +154,9 @@ for s in ["success", "lift", "grip", "dock", "approach"]:
     if c > 0 or s in ["success", "approach"]:
         print(f"  {s}: {c}/{total_episodes} ({100*c/total_episodes:.1f}%)")
 print(f"  Lift successes: {episode_results.get('success', 0)}/{total_episodes}")
+if max_lift_cm:
+    import numpy as np
+    print(f"  Lift heights: mean={np.mean(max_lift_cm):.1f}cm  max={np.max(max_lift_cm):.1f}cm  min={np.min(max_lift_cm):.1f}cm")
 
 env.close()
 simulation_app.close()

@@ -54,6 +54,11 @@ def main():
     env_cfg = GripperDroneEnvCfg(stage=Stage(args.stage))
     env_cfg.scene.num_envs = args.num_envs
 
+    # Stage 4: dynamic box for real physics grasping
+    if args.stage == 4:
+        env_cfg.scene.grasp_object.spawn.rigid_props.kinematic_enabled = False
+        env_cfg.scene.grasp_object.spawn.rigid_props.disable_gravity = False
+
     # Override domain rand for robustness testing
     if args.wind_std is not None:
         env_cfg.domain_rand.wind_force_std = args.wind_std

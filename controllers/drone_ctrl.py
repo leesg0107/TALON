@@ -168,7 +168,8 @@ class AttitudeController:
     ):
         self.num_envs = num_envs
         self.device = device
-        self.mass = total_mass
+        self.base_mass = total_mass
+        self.mass = torch.full((num_envs,), total_mass, device=device)  # per-env mass
         self.gravity = gravity
 
         self.kp = torch.tensor(kp_att, device=device)
@@ -210,7 +211,7 @@ class AttitudeController:
 
         # Total thrust = mass * body-Z component of specific force
         # We also add a small XY-to-attitude coupling for better tracking
-        total_thrust = self.mass * specific_force_b[:, 2].clamp(min=0.5, max=4.0 * self.gravity)
+        total_thrust = self.mass * specific_force_b[:, 2].clamp(min=0.5, max=4.0 * self.gravity)  # (N,)
 
         # --- Step 2: Compute desired attitude from desired acceleration ---
         # Desired body Z-axis in world frame (thrust direction)

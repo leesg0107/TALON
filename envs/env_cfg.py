@@ -85,8 +85,8 @@ GRASP_OBJECT_CFG = RigidObjectCfg(
     spawn=sim_utils.CuboidCfg(
         size=(0.08, 0.08, 0.08),  # 8cm cube (must match training)
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
-            kinematic_enabled=False,  # Dynamic: box can be grasped and lifted
-            disable_gravity=False,    # Gravity ON: box sits on pedestal naturally
+            kinematic_enabled=True,   # Start kinematic: stable during approach
+            disable_gravity=False,    # Gravity ON when switched to dynamic
         ),
         mass_props=sim_utils.MassPropertiesCfg(mass=0.2),
         collision_props=sim_utils.CollisionPropertiesCfg(
@@ -269,8 +269,8 @@ class GripperDroneEnvCfg(DirectRLEnvCfg):
     object_size_range: tuple[float, float] = (0.03, 0.12)
 
     # Stage 4: Loaded flight
-    delivery_range_xy: float = 3.0
-    delivery_z: float = 2.0
+    delivery_range_xy: float = 1.0   # same as Stage 1 goal range
+    delivery_z: float = 1.5          # reasonable altitude for loaded flight
 
     # Stage 5: Release (reuses Stage 2/3 params)
 
@@ -305,8 +305,9 @@ class GripperDroneEnvCfg(DirectRLEnvCfg):
             self.episode_length_s = 15.0
 
         elif self.stage == Stage.LOADED_FLIGHT:
-            self.lock_gripper = False  # Holding payload
-            self.domain_rand.payload_mass_range = (0.05, 0.5)
+            self.lock_gripper = True   # Gripper: starts closed (pre-grasped)
+            self.domain_rand.payload_mass_range = (0.1, 0.3)  # for observation (matches box mass range)
+            self.episode_length_s = 15.0
 
         elif self.stage == Stage.RELEASE:
             self.lock_gripper = False  # Releasing payload

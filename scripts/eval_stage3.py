@@ -121,14 +121,13 @@ for step in range(max_eval_steps):
         else:
             action[i, 7] = 1.0  # keep open
 
-            # Check for docking (overlap > 85% sustained)
-            if ov > 0.85:
+            # Check for docking (overlap > 50% cumulative, same as training)
+            if ov > 0.50:
                 align_count[i] += 1
-            else:
-                align_count[i] = 0
+            # No reset: cumulative
 
-            # Docked for 20 steps (0.13s): close gripper
-            if align_count[i] > 20:
+            # Docked after cumulative ~2s (300 steps)
+            if align_count[i] > 300:
                 action[i, 7] = -1.0
                 gripper_closed[i] = True
                 if not docked[i]:
