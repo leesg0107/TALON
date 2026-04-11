@@ -24,6 +24,8 @@ from isaaclab.app import AppLauncher
 parser = argparse.ArgumentParser(description="Gripper-Drone Evaluation")
 parser.add_argument("--stage", type=int, required=True, choices=[1, 2, 3, 4, 5])
 parser.add_argument("--checkpoint", type=str, required=True)
+parser.add_argument("--algo", type=str, default="ppo", choices=["ppo", "sac"])
+parser.add_argument("--phase", type=int, default=None, choices=[1, 2])
 parser.add_argument("--num_envs", type=int, default=16)
 parser.add_argument("--episodes", type=int, default=50, help="Number of evaluation episodes")
 parser.add_argument("--wind_std", type=float, default=None, help="Override wind force std")
@@ -59,18 +61,36 @@ def main():
         env_cfg.scene.grasp_object.spawn.rigid_props.kinematic_enabled = False
         env_cfg.scene.grasp_object.spawn.rigid_props.disable_gravity = False
 
+    # Stage 3 curriculum phase (dynamic box, tight spawn in phase 1)
+    if args.stage == 3 and args.phase is not None:
+        env_cfg.grasping_phase = args.phase
+        env_cfg.episode_length_s = 3.0 if args.phase == 1 else 8.0
+        env_cfg.scene.grasp_object.spawn.rigid_props.kinematic_enabled = False
+        env_cfg.scene.grasp_object.spawn.rigid_props.disable_gravity = False
+
     # Override domain rand for robustness testing
     if args.wind_std is not None:
         env_cfg.domain_rand.wind_force_std = args.wind_std
     if args.payload is not None:
         env_cfg.domain_rand.payload_mass_range = (args.payload, args.payload)
 
-    env = GripperDroneEnv(cfg=env_cfg)
-    env = SkrlVecEnvWrapper(env)
+    raw_env = GripperDroneEnv(cfg=env_cfg)
+
+    # SAC requires bounded action space — set BEFORE wrapping
+    if args.algo == "sac":
+        import gymnasium as gym
+        raw_env.action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(8,), dtype=np.float32)
+        raw_env.single_action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(8,), dtype=np.float32)
+
+    env = SkrlVecEnvWrapper(raw_env)
 
     # --- Agent ---
     device = env.device
-    agent = build_ppo_agent(env=env, device=device, stage=args.stage, checkpoint_path=args.checkpoint)
+    if args.algo == "sac":
+        from agents.sac_cfg import build_sac_agent
+        agent = build_sac_agent(env=env, device=device, stage=args.stage, checkpoint_path=args.checkpoint)
+    else:
+        agent = build_ppo_agent(env=env, device=device, stage=args.stage, checkpoint_path=args.checkpoint)
     agent.set_running_mode("eval")
 
     # --- Evaluation loop ---
@@ -82,6 +102,7 @@ def main():
 
     episode_rewards = torch.zeros(args.num_envs, device=device)
     episode_lengths = torch.zeros(args.num_envs, dtype=torch.long, device=device)
+    min_pos_error = torch.full((args.num_envs,), float('inf'), device=device)
     episode_pos_errors = []
 
     while completed_episodes < args.episodes:
@@ -92,10 +113,17 @@ def main():
         episode_rewards += rewards.squeeze()
         episode_lengths += 1
 
-        # Track position errors from env extras
-        if "log" in info:
-            if "pos_error" in info["log"]:
-                episode_pos_errors.append(info["log"]["pos_error"])
+        # Track per-env position error
+        unwrapped = env.unwrapped if hasattr(env, 'unwrapped') else env
+        if hasattr(unwrapped, 'robot') and hasattr(unwrapped, 'goal_pos'):
+            from envs.drone_env import quat_to_rot_matrix
+            pos_w = unwrapped.robot.data.root_pos_w
+            quat_w = unwrapped.robot.data.root_quat_w
+            R = quat_to_rot_matrix(quat_w)
+            gripper_offset = torch.tensor([0.0, 0.0, -0.08], device=device)
+            gripper_pos = pos_w + torch.bmm(R, gripper_offset.expand(args.num_envs, -1).unsqueeze(-1)).squeeze(-1)
+            pos_err = torch.norm(gripper_pos - unwrapped.goal_pos, dim=-1)
+            min_pos_error = torch.min(min_pos_error, pos_err)
 
         # Collect completed episodes
         done = (terminated | truncated).squeeze()
@@ -108,10 +136,15 @@ def main():
             metrics["reward"].append(episode_rewards[i].item())
             metrics["length"].append(episode_lengths[i].item())
             metrics["terminated"].append(terminated.squeeze()[i].item())
+            metrics["min_pos_error"].append(min_pos_error[i].item())
+            metrics["reached_0.5m"].append(1.0 if min_pos_error[i].item() < 0.5 else 0.0)
+            metrics["reached_0.3m"].append(1.0 if min_pos_error[i].item() < 0.3 else 0.0)
+            metrics["reached_0.1m"].append(1.0 if min_pos_error[i].item() < 0.1 else 0.0)
             completed_episodes += 1
 
             episode_rewards[i] = 0.0
             episode_lengths[i] = 0
+            min_pos_error[i] = float('inf')
 
         if completed_episodes % 10 == 0 and completed_episodes > 0:
             avg_r = np.mean(metrics["reward"][-10:])
@@ -127,9 +160,11 @@ def main():
     print(f"  Crash rate:        {np.mean(metrics['terminated']):.1%}")
     print(f"  Survival rate:     {1 - np.mean(metrics['terminated']):.1%}")
 
-    if episode_pos_errors:
-        avg_pos_err = np.mean(episode_pos_errors)
-        print(f"  Mean pos error:    {avg_pos_err:.4f} m")
+    if metrics.get("min_pos_error"):
+        print(f"  Min pos error:     {np.mean(metrics['min_pos_error']):.4f} m (avg of per-episode best)")
+        print(f"  Reached <0.5m:     {np.mean(metrics['reached_0.5m']):.1%}")
+        print(f"  Reached <0.3m:     {np.mean(metrics['reached_0.3m']):.1%}")
+        print(f"  Reached <0.1m:     {np.mean(metrics['reached_0.1m']):.1%}")
 
     if args.wind_std is not None:
         print(f"  Wind override:     {args.wind_std} N std")

@@ -22,16 +22,19 @@ from dataclasses import dataclass, field
 
 @dataclass
 class Stage1Weights:
-    """Stage 1: Basic Flight - navigate to target and hover."""
+    """Stage 1: Basic Flight - reach goal and hover.
+
+    Design: r_pos (always positive, gradient) + arrival/hover bonus (big reward at goal).
+    No free rewards. Only way to maximize: reach goal and stay.
+    """
     w_pos: float = 4.0
     a_pos: float = 1.2
-    w_vel: float = 1.0
-    a_vel: float = 2.0
-    w_level: float = 1.0
-    a_level: float = 2.0
-    w_smooth: float = 0.1    # proportional penalty: -w * ||Δa||²
-    w_mag: float = 0.02      # proportional penalty: -w * ||a||²
-    alive: float = 0.05
+    arrival_threshold: float = 0.5
+    arrival_bonus: float = 10.0
+    hover_bonus: float = 5.0
+    a_hover_vel: float = 3.0
+    w_smooth: float = 0.1
+    w_mag: float = 0.02
 
 
 @dataclass
@@ -155,40 +158,39 @@ def compute_stage1_rewards(
     prev_action: torch.Tensor,    # (N, A) previous action
     w: Stage1Weights | None = None,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-    """Compute Stage 1 rewards. Gripper-centric: measures gripper-to-goal distance."""
+    """Compute Stage 1 rewards: reach goal and hover.
+
+    r_pos: always positive, gradient toward goal (no crash exploit).
+    r_arrive + r_hover: big bonus at goal → dominates r_pos.
+    No free rewards (r_vel, r_level, r_alive removed).
+    """
     w = w or Stage1Weights()
 
     pos_err = torch.norm(gripper_pos_w - goal_w, dim=-1)
     vel_norm = torch.norm(vel_b, dim=-1)
 
-    # Position reward
+    # Position: always positive, gradient toward goal
     r_pos = exp_reward(pos_err, w.w_pos, w.a_pos)
 
-    # Velocity penalty (proximity-gated: deceleration near goal)
-    proximity = (1.0 - pos_err).clamp(min=0.0)
-    r_vel = exp_reward(vel_norm * proximity, w.w_vel, w.a_vel)
+    # Arrival bonus: big reward when at goal
+    arrived = (pos_err < w.arrival_threshold).float()
+    r_arrive = w.arrival_bonus * arrived
 
-    # Level flight reward
-    tilt = tilt_angle(rot_matrix)
-    r_level = exp_reward(tilt, w.w_level, w.a_level)
+    # Hover bonus: reward for being still at goal
+    r_hover = w.hover_bonus * arrived * torch.exp(-w.a_hover_vel * vel_norm)
 
-    # Action smoothness: proportional penalty (exp vanishes for ||Δa||>1, gives no gradient)
+    # Action penalties
     action_diff_sq = torch.sum((action - prev_action) ** 2, dim=-1)
-    r_smooth = -0.1 * action_diff_sq
-
-    # Action magnitude: proportional penalty
+    r_smooth = -w.w_smooth * action_diff_sq
     action_sq = torch.sum(action ** 2, dim=-1)
-    r_mag = -0.02 * action_sq
+    r_mag = -w.w_mag * action_sq
 
-    # Alive bonus
-    r_alive = torch.full_like(r_pos, w.alive)
-
-    total = r_pos + r_vel + r_level + r_smooth + r_mag + r_alive
+    total = r_pos + r_arrive + r_hover + r_smooth + r_mag
 
     info = {
-        "r_pos": r_pos, "r_vel": r_vel, "r_level": r_level,
+        "r_pos": r_pos, "r_arrive": r_arrive, "r_hover": r_hover,
         "r_smooth": r_smooth, "r_mag": r_mag, "pos_error": pos_err,
-        "tilt": tilt,
+        "tilt": tilt_angle(rot_matrix), "arrived": arrived,
     }
     return total, info
 

@@ -83,7 +83,7 @@ GRIPPER_DRONE_CFG = ArticulationCfg(
 GRASP_OBJECT_CFG = RigidObjectCfg(
     prim_path="/World/envs/env_.*/Object",
     spawn=sim_utils.CuboidCfg(
-        size=(0.08, 0.08, 0.08),  # 8cm cube (must match training)
+        size=(0.08, 0.08, 0.08),  # 8cm cube
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             kinematic_enabled=True,   # Start kinematic: stable during approach
             disable_gravity=False,    # Gravity ON when switched to dynamic
@@ -267,6 +267,10 @@ class GripperDroneEnvCfg(DirectRLEnvCfg):
     grasp_plate_threshold: float = 0.1   # rad: plates must be < this to count as closed
     object_mass_range: tuple[float, float] = (0.05, 0.5)
     object_size_range: tuple[float, float] = (0.03, 0.12)
+    # Stage 3 curriculum phase (1 or 2)
+    # Phase 1: tight spawn near box, learn precise docking
+    # Phase 2: full spawn range, generalize approach + dock
+    grasping_phase: int = 2              # default: original behavior
 
     # Stage 4: Loaded flight
     delivery_range_xy: float = 1.0   # same as Stage 1 goal range
@@ -302,7 +306,12 @@ class GripperDroneEnvCfg(DirectRLEnvCfg):
         elif self.stage == Stage.GRASPING:
             self.lock_gripper = True   # Gripper locked open during approach; auto-close on dock
             self.domain_rand.payload_mass_range = (0.0, 0.0)
-            self.episode_length_s = 15.0
+            # Phase 1: short episodes (drone spawns directly above box, no approach)
+            # Phase 2: full episode for approach + dock
+            if self.grasping_phase == 1:
+                self.episode_length_s = 3.0
+            else:
+                self.episode_length_s = 8.0
 
         elif self.stage == Stage.LOADED_FLIGHT:
             self.lock_gripper = True   # Gripper: starts closed (pre-grasped)

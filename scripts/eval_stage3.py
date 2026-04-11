@@ -19,16 +19,20 @@ import isaaclab.sim as sim_utils
 cfg = GripperDroneEnvCfg(stage=Stage.GRASPING)
 cfg.scene.num_envs = 100
 cfg.scene.env_spacing = 5.0
-cfg.episode_length_s = 40.0
-cfg.lock_gripper = False  # Allow gripper control
+cfg.grasping_phase = 1       # Phase 1: drone spawns above box
+cfg.episode_length_s = 3.0   # Phase 1 episode length
+cfg.lock_gripper = True      # Auto-close on dock
+
+# Dynamic box: real physics grasping test
+cfg.scene.grasp_object.spawn.rigid_props.kinematic_enabled = False
+cfg.scene.grasp_object.spawn.rigid_props.disable_gravity = False
 
 env = GripperDroneEnv(cfg=cfg)
 env_wrapped = SkrlVecEnvWrapper(env)
 
 device = env.device
 agent = build_ppo_agent(env=env_wrapped, device=device, stage=3,
-                        checkpoint_path="logs/best_models/best_fc10_saturate.pt")
-# NOTE: This is the best model with dock 56.5%, full_contain 10.8%
+                        checkpoint_path="logs/stage3_phase1_v5/best_agent.pt")
 agent.set_running_mode("eval")
 
 # --- Capture Column Visualization ---
@@ -126,8 +130,8 @@ for step in range(max_eval_steps):
                 align_count[i] += 1
             # No reset: cumulative
 
-            # Docked after cumulative ~2s (300 steps)
-            if align_count[i] > 300:
+            # Docked after cumulative ~1s (150 steps, same as training)
+            if align_count[i] > 150:
                 action[i, 7] = -1.0
                 gripper_closed[i] = True
                 if not docked[i]:

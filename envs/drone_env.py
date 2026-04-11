@@ -173,7 +173,7 @@ class GripperDroneEnv(DirectRLEnv):
             # Default: gripper fully open
             gripper_cmd = torch.full((self.num_envs,), 0.873, device=self.device)
             # Auto-close on sustained dock (contain_hold_count tracks cumulative containment)
-            dock_threshold = 100 if self.cfg.stage == Stage.LOADED_FLIGHT else 300
+            dock_threshold = 100 if self.cfg.stage == Stage.LOADED_FLIGHT else 150
             docked_mask = self.contain_hold_count >= dock_threshold
             gripper_cmd[docked_mask] = -0.087  # fully closed
         else:
@@ -438,71 +438,66 @@ class GripperDroneEnv(DirectRLEnv):
 
             full_contain = (overlap_ratio > 0.50).float()
 
-            # ---- Rewards: all independent, no cross-scaling ----
-            r_contain = 15.0 * overlap_ratio + 10.0 * full_contain  # independent: plates 안착
-            r_approach = 4.0 * torch.exp(-1.2 * pos_err.clamp(min=0.3))  # saturate at 0.3m: no hovering incentive near box
+            # ========== Axis 1: Approach (split XY/Z, Z above box only) ==========
+            above_box = (gripper_pos_w[:, 2] > self.object_pos[:, 2]).float()
+            r_approach_xy = 3.0 * torch.exp(-1.5 * xy_err)
+            r_approach_z = 2.0 * torch.exp(-2.0 * z_err) * above_box
+            r_approach = r_approach_xy + r_approach_z
 
-            # Column alignment: decomposed into independent axes + soft gate
-            # Soft gate: 0 at xy>0.25m, linear to 1.0 at xy<0.05m
+            # ========== Axis 2: Column alignment (soft gate, decomposed) ==========
             approach_gate = ((0.25 - xy_err) / 0.20).clamp(0.0, 1.0)
-            r_x_align = 1.5 * x_contain * approach_gate   # X축 기둥 중심 정렬
-            r_y_align = 1.5 * y_contain * approach_gate   # Y축 기둥 중심 정렬
-            r_z_below = 2.0 * z_below * approach_gate     # 위에서 접근
+            r_x_align = 1.5 * x_contain * approach_gate
+            r_y_align = 1.5 * y_contain * approach_gate
+            r_z_below = 2.0 * z_below * approach_gate
 
-            r_z = 2.0 * torch.exp(-2.0 * z_err)           # independent: 하강
+            # Staged descent: XY first, then descend
+            xy_aligned = (xy_err < 0.10).float()
+            alt_target = self.object_pos[:, 2] + 0.25 * (1.0 - xy_aligned)
+            staged_z_err = torch.abs(gripper_pos_w[:, 2] - alt_target)
+            r_z = 2.0 * torch.exp(-2.0 * staged_z_err)
 
-            # Fine approach: bridges 5-15cm gap where r_contain is weak
-            r_fine = 5.0 * torch.exp(-10.0 * xy_err) * approach_gate
+            # Fine approach: bridges 5-15cm gap
+            r_fine = 5.0 * torch.exp(-10.0 * xy_err) * approach_gate * above_box
 
-            # Center docking: box center must align with gripper center (local frame)
-            center_offset = torch.norm(box_local[:, :2], dim=-1)
-            r_center = 5.0 * torch.exp(-15.0 * center_offset) * approach_gate
+            # ========== Axis 3: Precision dock (overlap-based) ==========
+            r_contain = 15.0 * overlap_ratio + 10.0 * full_contain
 
-            # Stability rewards: ALWAYS active
-            vel_norm = torch.norm(gripper_vel_b, dim=-1)
-            proximity = (1.0 - pos_err).clamp(min=0.0)
-            r_vel = exp_reward(vel_norm * proximity, 1.0, 2.0)
-
-            action7 = self.raw_actions[:, :7]
-            prev7 = self.prev_action[:, :7]
-            r_smooth = -0.5 * torch.sum((action7 - prev7) ** 2, dim=-1)
-            r_mag = -0.1 * torch.sum(action7 ** 2, dim=-1)
-
-            # Success: cumulative 3s containment
             is_contained = (overlap_ratio > 0.50)
+            r_dock_bonus = 10.0 * is_contained.float()
+
             self.contain_hold_count += is_contained.long()
-            contain_success = (self.contain_hold_count >= 450).float()
+            hold_duration = (self.contain_hold_count.float() / 150.0).clamp(max=3.0)
+            r_hold_stable = 10.0 * hold_duration * is_contained.float()
+
+            contain_success = (self.contain_hold_count >= 225).float()
             r_success = 50.0 * contain_success
 
-            # Pedestal safety: stay above pedestal top
-            pedestal_top = 0.50
-            r_safe = 2.0 * (gripper_pos_w[:, 2] > pedestal_top).float()
+            # ========== Penalties ==========
+            action7 = self.raw_actions[:, :7]
+            prev7 = self.prev_action[:, :7]
+            r_smooth = -0.2 * torch.sum((action7 - prev7) ** 2, dim=-1)
+            r_mag = -0.1 * torch.sum(action7 ** 2, dim=-1)
 
-            # Urgency: time pressure to dock (0 if docked, increasing penalty if not)
-            max_steps = int(self.cfg.episode_length_s / (self.cfg.sim.dt * self.cfg.decimation))
-            progress = self.step_count.float() / max_steps
-            is_docked = (overlap_ratio > 0.5).float()
-            r_urgency = -2.0 * progress * (1.0 - is_docked)
-
-            # Loiter penalty: near box but not in column, late in episode
-            near_but_outside = (xy_err < 0.2) & (column_score < 0.1)
-            late_game = (progress > 0.5).float()
-            r_loiter = -2.0 * near_but_outside.float() * late_game
-
-            # Tilt at dock penalty: near docking but tilted = unstable grasp
+            # Tilt
             tilt_angle = torch.acos(R[:, 2, 2].clamp(-1.0, 1.0))
+            r_tilt_descent = -3.0 * tilt_angle * xy_aligned
             near_dock = (overlap_ratio > 0.3).float()
             r_tilt_dock = -2.0 * tilt_angle * near_dock
 
             r_column_total = r_x_align + r_y_align + r_z_below
-            rewards = r_approach + r_column_total + r_contain + r_fine + r_center + r_z + r_safe + r_urgency + r_loiter + r_tilt_dock + r_vel + r_smooth + r_mag + r_success
+            rewards = (r_approach + r_column_total + r_z + r_fine
+                       + r_contain + r_dock_bonus + r_hold_stable + r_success
+                       + r_tilt_descent + r_tilt_dock
+                       + r_smooth + r_mag)
             info = {
-                "r_approach": r_approach, "r_column": r_column_total, "r_contain": r_contain,
-                "r_safe": r_safe, "r_urgency": r_urgency, "r_loiter": r_loiter, "r_tilt_dock": r_tilt_dock,
-                "r_fine": r_fine, "r_center": r_center, "r_z": r_z,
+                "r_approach": r_approach, "r_approach_xy": r_approach_xy, "r_approach_z": r_approach_z,
+                "r_column": r_column_total,
                 "r_x_align": r_x_align, "r_y_align": r_y_align, "r_z_below": r_z_below,
-                "r_vel": r_vel, "r_smooth": r_smooth, "r_mag": r_mag,
-                "r_success": r_success,
+                "r_z": r_z, "r_fine": r_fine,
+                "r_contain": r_contain, "r_dock_bonus": r_dock_bonus,
+                "r_hold_stable": r_hold_stable, "r_success": r_success,
+                "r_tilt_descent": r_tilt_descent, "r_tilt_dock": r_tilt_dock,
+                "r_smooth": r_smooth, "r_mag": r_mag,
                 "xy_err": xy_err, "alt_err": z_err,
                 "gripper_xy_offset": xy_err, "pos_error": pos_err,
                 "overlap_ratio": overlap_ratio, "full_contain": full_contain,
@@ -623,7 +618,7 @@ class GripperDroneEnv(DirectRLEnv):
 
         # Box fell off pedestal (Stage 3 with dynamic box)
         # Only terminate if gripper hasn't docked (if docked, box may be lifted)
-        dock_threshold = 100 if self.cfg.stage == Stage.LOADED_FLIGHT else 300
+        dock_threshold = 100 if self.cfg.stage == Stage.LOADED_FLIGHT else 150
         box_fell = (self.object_pos[:, 2] < 0.30) & (self.contain_hold_count < dock_threshold)
 
         # Stage 4: box must stay in gripper — terminate if lost
@@ -644,7 +639,7 @@ class GripperDroneEnv(DirectRLEnv):
         truncated = self.step_count >= max_steps
         # Stage 3: also truncate on successful 3s containment
         if self.cfg.stage == Stage.GRASPING:
-            contain_success = self.contain_hold_count >= 450
+            contain_success = self.contain_hold_count >= 225
             truncated = truncated | contain_success
 
         return terminated, truncated
@@ -697,6 +692,12 @@ class GripperDroneEnv(DirectRLEnv):
             # Stage 4: spawn drone directly above box (no offset)
             root_pos = self.object_pos[env_ids].clone()
             root_pos[:, 2] += 0.08  # gripper center offset → body above box
+        elif self.cfg.stage == Stage.GRASPING and self.cfg.grasping_phase == 1:
+            # Stage 3 Phase 1: spawn drone directly above box for precise dock learning
+            root_pos = self.object_pos[env_ids].clone()
+            root_pos[:, 2] = 0.85  # 30cm above box top (box z=0.54)
+            # small XY perturbation: ±5cm
+            root_pos[:, :2] += 0.10 * (torch.rand(num_reset, 2, device=self.device) - 0.5)
         elif self.cfg.stage.value >= Stage.PRECISION_APPROACH.value:
             default_pos = torch.tensor([0.0, 0.0, 1.5], device=self.device)
             root_pos = default_pos + spawn_offset

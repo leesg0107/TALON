@@ -27,17 +27,23 @@ import sys
 from isaaclab.app import AppLauncher
 
 # Parse arguments before AppLauncher
-parser = argparse.ArgumentParser(description="Gripper-Drone PPO Training")
+parser = argparse.ArgumentParser(description="Gripper-Drone Training")
 parser.add_argument("--stage", type=int, required=True, choices=[1, 2, 3, 4, 5],
                     help="Training stage (1-5)")
 parser.add_argument("--substage", type=str, default=None, choices=["a", "b", "c"],
                     help="Sub-stage for Stage 3 curriculum (a/b/c)")
+parser.add_argument("--phase", type=int, default=None, choices=[1, 2],
+                    help="Stage 3 curriculum phase (1=tight spawn dynamic, 2=full spawn dynamic)")
+parser.add_argument("--algo", type=str, default="ppo", choices=["ppo", "sac"],
+                    help="RL algorithm (ppo or sac)")
 parser.add_argument("--num_envs", type=int, default=4096,
                     help="Number of parallel environments")
 parser.add_argument("--max_steps", type=int, default=500_000_000,
                     help="Maximum training timesteps")
 parser.add_argument("--checkpoint", type=str, default=None,
                     help="Path to checkpoint from previous stage")
+parser.add_argument("--ppo_policy", type=str, default=None,
+                    help="Path to PPO checkpoint for policy-only transfer to SAC")
 parser.add_argument("--log_dir", type=str, default=None,
                     help="Log directory (auto-generated if not set)")
 parser.add_argument("--seed", type=int, default=42, help="Random seed")
@@ -64,6 +70,7 @@ from isaaclab_rl.skrl import SkrlVecEnvWrapper
 from envs.env_cfg import GripperDroneEnvCfg, Stage
 from envs.drone_env import GripperDroneEnv
 from agents.ppo_cfg import build_ppo_agent
+from agents.sac_cfg import build_sac_agent
 
 
 def configure_stage3(cfg: GripperDroneEnvCfg, substage: str):
@@ -103,8 +110,9 @@ def main():
     log_dir = args.log_dir or os.path.join("logs", stage_name)
     os.makedirs(log_dir, exist_ok=True)
     print(f"\n{'='*60}")
-    print(f"  Gripper-Drone PPO Training")
+    print(f"  Gripper-Drone {args.algo.upper()} Training")
     print(f"  Stage: {args.stage}" + (f" (substage {args.substage})" if args.substage else ""))
+    print(f"  Algorithm: {args.algo.upper()}")
     print(f"  Environments: {args.num_envs}")
     print(f"  Max steps: {args.max_steps:,}")
     print(f"  Checkpoint: {args.checkpoint or 'None (from scratch)'}")
@@ -120,28 +128,62 @@ def main():
         substage = args.substage or "a"
         configure_stage3(env_cfg, substage)
 
+        # Curriculum phase configuration
+        if args.phase is not None:
+            env_cfg.grasping_phase = args.phase
+            # Phase 1: short episode (drone spawns above box, no approach)
+            # Phase 2: full episode
+            env_cfg.episode_length_s = 3.0 if args.phase == 1 else 8.0
+            # Both phases use dynamic box
+            env_cfg.scene.grasp_object.spawn.rigid_props.kinematic_enabled = False
+            env_cfg.scene.grasp_object.spawn.rigid_props.disable_gravity = False
+            print(f"  Stage 3 curriculum phase: {args.phase}")
+            print(f"  Episode length: {env_cfg.episode_length_s}s")
+            print(f"  Box: dynamic")
+
     # Stage 4: Dynamic box for real physics grasping
     if args.stage == 4:
         env_cfg.scene.grasp_object.spawn.rigid_props.kinematic_enabled = False
         env_cfg.scene.grasp_object.spawn.rigid_props.disable_gravity = False
 
     # --- Create environment ---
-    env = GripperDroneEnv(cfg=env_cfg)
-    env = SkrlVecEnvWrapper(env)
+    raw_env = GripperDroneEnv(cfg=env_cfg)
+    env = SkrlVecEnvWrapper(raw_env)
+
+    # SAC requires bounded action space (log_prob correction with tanh squashing)
+    if args.algo == "sac":
+        import gymnasium as gym
+        import numpy as np
+        bounded_action_space = gym.spaces.Box(
+            low=-1.0, high=1.0, shape=(8,), dtype=np.float32
+        )
+        # Override on the raw env before wrapping
+        raw_env.action_space = bounded_action_space
+        raw_env.single_action_space = bounded_action_space
+        print(f"  [SAC] Action space overridden to Box(-1, 1, (8,))")
 
     print(f"  Observation space: {env.observation_space}")
     print(f"  Action space: {env.action_space}")
     print(f"  Num envs: {env.num_envs}")
 
-    # --- Build PPO agent ---
+    # --- Build agent ---
     device = env.device
-    agent = build_ppo_agent(
-        env=env,
-        device=device,
-        stage=args.stage,
-        substage=args.substage,
-        checkpoint_path=args.checkpoint,
-    )
+    if args.algo == "sac":
+        agent = build_sac_agent(
+            env=env,
+            device=device,
+            stage=args.stage,
+            checkpoint_path=args.checkpoint,
+            ppo_policy_path=args.ppo_policy,
+        )
+    else:
+        agent = build_ppo_agent(
+            env=env,
+            device=device,
+            stage=args.stage,
+            substage=args.substage,
+            checkpoint_path=args.checkpoint,
+        )
 
     # --- Configure trainer ---
     # SKRL SequentialTrainer counts timesteps as individual env.step() calls.
@@ -167,6 +209,43 @@ def main():
     if args.stage == 3 and args.substage == "c":
         _setup_stage3c_curriculum(env, agent, trainer, args.max_steps)
 
+    # --- SAC entropy floor: prevent alpha collapse ---
+    if args.algo == "sac":
+        _setup_entropy_floor(agent, min_alpha=0.002)
+
+    # --- Best checkpoint saving via post_interaction hook ---
+    _setup_best_checkpoint_saving(agent, log_dir, timesteps)
+
+    # --- Save training config for reproducibility ---
+    import json
+    config_record = {
+        "stage": args.stage,
+        "algo": args.algo,
+        "num_envs": args.num_envs,
+        "max_steps": args.max_steps,
+        "checkpoint": args.checkpoint,
+        "ppo_policy": getattr(args, 'ppo_policy', None),
+        "seed": args.seed,
+        "episode_length_s": env_cfg.episode_length_s,
+        "lock_gripper": env_cfg.lock_gripper,
+    }
+    if args.algo == "sac":
+        from agents.sac_cfg import get_sac_config
+        config_record["sac_config"] = get_sac_config(args.stage)
+        config_record["sac_config"].pop("state_preprocessor", None)
+        config_record["sac_config"].pop("state_preprocessor_kwargs", None)
+        config_record["entropy_floor"] = 0.002
+    else:
+        from agents.ppo_cfg import get_ppo_config
+        config_record["ppo_config"] = get_ppo_config(args.stage)
+        config_record["ppo_config"].pop("state_preprocessor", None)
+        config_record["ppo_config"].pop("state_preprocessor_kwargs", None)
+        config_record["ppo_config"].pop("value_preprocessor", None)
+        config_record["ppo_config"].pop("value_preprocessor_kwargs", None)
+    with open(os.path.join(log_dir, "train_config.json"), "w") as f:
+        json.dump(config_record, f, indent=2, default=str)
+    print(f"  Config saved to {log_dir}/train_config.json")
+
     # --- Train ---
     print("\nStarting training...\n")
     trainer.train()
@@ -179,6 +258,57 @@ def main():
     # Cleanup
     simulation_app.close()
 
+
+
+def _setup_entropy_floor(agent, min_alpha=0.005):
+    """Clamp SAC entropy coefficient to prevent collapse."""
+    import math
+    min_log_alpha = math.log(min_alpha)
+    original_post = agent.post_interaction
+
+    def entropy_floor_post(timestep, timesteps):
+        with torch.no_grad():
+            if agent.log_entropy_coefficient.item() < min_log_alpha:
+                agent.log_entropy_coefficient.fill_(min_log_alpha)
+        return original_post(timestep, timesteps)
+
+    agent.post_interaction = entropy_floor_post
+    print(f"  [SAC] Entropy floor set: min_alpha={min_alpha}")
+
+
+def _setup_best_checkpoint_saving(agent, log_dir, total_timesteps):
+    """Save best checkpoint based on total reward, and periodic checkpoints."""
+    best_reward = [-float("inf")]
+    original_post = agent.post_interaction
+
+    def saving_post_interaction(timestep, timesteps):
+        result = original_post(timestep, timesteps)
+
+        # Check every 1000 timesteps
+        if timestep % 1000 == 0 and timestep > 0:
+            # Get recent reward from agent's tracking
+            if hasattr(agent, '_cumulative_rewards') and len(agent._cumulative_rewards) > 0:
+                recent = agent._cumulative_rewards[-1].item() if hasattr(agent._cumulative_rewards[-1], 'item') else agent._cumulative_rewards[-1]
+            else:
+                recent = None
+
+            if recent is not None and recent > best_reward[0]:
+                best_reward[0] = recent
+                best_path = os.path.join(log_dir, "best_agent.pt")
+                agent.save(best_path)
+                print(f"  [Best] step {timestep}: reward={recent:.1f} → saved {best_path}")
+
+        # Periodic checkpoint every 10% of training
+        interval = max(total_timesteps // 10, 1)
+        if timestep % interval == 0 and timestep > 0:
+            ckpt_path = os.path.join(log_dir, f"checkpoint_{timestep}.pt")
+            agent.save(ckpt_path)
+            pct = 100 * timestep / total_timesteps
+            print(f"  [Checkpoint] step {timestep} ({pct:.0f}%) → saved {ckpt_path}")
+
+        return result
+
+    agent.post_interaction = saving_post_interaction
 
 
 def _setup_stage3c_curriculum(env, agent, trainer, max_steps):
