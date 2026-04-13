@@ -271,6 +271,7 @@ class GripperDroneEnvCfg(DirectRLEnvCfg):
     # Phase 1: tight spawn near box, learn precise docking
     # Phase 2: full spawn range, generalize approach + dock
     grasping_phase: int = 2              # default: original behavior
+    residual_scale: float = 0.1           # RL residual multiplier (0.0 = pure analytical)
 
     # Stage 4: Loaded flight
     delivery_range_xy: float = 1.0   # same as Stage 1 goal range

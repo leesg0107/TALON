@@ -1,4 +1,4 @@
-"""Analytical base controller evaluation — failure diagnosis."""
+"""Hybrid (analytical + RL residual) evaluation — failure diagnosis."""
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -18,7 +18,7 @@ cfg.scene.num_envs = 100
 cfg.scene.env_spacing = 5.0
 cfg.episode_length_s = 12.0
 cfg.lock_gripper = True
-cfg.residual_scale = 0.0  # Pure analytical — no RL residual
+cfg.residual_scale = 0.1  # RL residual: ±0.8 m/s² correction on top of analytical
 # Dynamic box
 cfg.scene.grasp_object.spawn.rigid_props.kinematic_enabled = False
 cfg.scene.grasp_object.spawn.rigid_props.disable_gravity = False
@@ -28,7 +28,7 @@ env_wrapped = SkrlVecEnvWrapper(env)
 
 device = env.device
 agent = build_ppo_agent(env=env_wrapped, device=device, stage=3,
-                        checkpoint_path="logs/stage3_dynamic_v2/best_agent.pt")
+                        checkpoint_path="logs/stage3_residual/best_agent.pt")
 agent.set_running_mode("eval")
 
 num_envs = env.num_envs

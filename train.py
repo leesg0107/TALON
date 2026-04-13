@@ -79,11 +79,14 @@ def configure_stage3(cfg: GripperDroneEnvCfg, substage: str):
         # Physics-based grasping: close-range, policy controls gripper
         cfg.auto_grasp = False           # NO auto-grasp — policy must close plates
         cfg.auto_grasp_prob = 0.0
-        cfg.spawn_spread = 0.3           # close range (0.3~0.8m above object)
+        cfg.spawn_spread = 1.0           # match eval: ±50cm XY, ±25cm Z
         cfg.approach_start_z = (0.7, 1.7)
         cfg.grasp_trigger_dist = 0.15    # gripper-to-object distance for grasp detection
         cfg.grasp_plate_threshold = 0.1  # plates must be < 0.1 rad to count as closed
-        cfg.episode_length_s = 8.0       # match sigmoid baseline (was 40.0)
+        cfg.episode_length_s = 12.0      # 12s for analytical+residual (was 8.0)
+        # Dynamic box for contact-aware learning
+        cfg.scene.grasp_object.spawn.rigid_props.kinematic_enabled = False
+        cfg.scene.grasp_object.spawn.rigid_props.disable_gravity = False
     elif substage == "b":
         # Full-range physics-based grasp: start 1-3m from object
         cfg.auto_grasp = False
@@ -133,7 +136,7 @@ def main():
             env_cfg.grasping_phase = args.phase
             # Phase 1: short episode (drone spawns above box, no approach)
             # Phase 2: full episode
-            env_cfg.episode_length_s = 3.0 if args.phase == 1 else 8.0
+            env_cfg.episode_length_s = 3.0 if args.phase == 1 else 12.0
             # Both phases use dynamic box
             env_cfg.scene.grasp_object.spawn.rigid_props.kinematic_enabled = False
             env_cfg.scene.grasp_object.spawn.rigid_props.disable_gravity = False
