@@ -135,6 +135,55 @@ class GripperDroneEnv(DirectRLEnv):
         return self.action_low + (raw_action + 1.0) / 2.0 * (self.action_high - self.action_low)
 
     # ========================================================================
+    # Analytical base controller (hybrid RL)
+    # ========================================================================
+
+    def _compute_analytical_base(self):
+        """Compute PD-based analytical action for Stage 3 approach.
+
+        Returns body-frame acceleration commands [ax, ay, az, 0,0,0,0,0] (8D).
+        XY: PD tracking of object position.
+        Z: gated descent — only descend when XY is aligned.
+        """
+        pos_w = self.robot.data.root_pos_w
+        vel_w = self.robot.data.root_lin_vel_w
+        quat_w = self.robot.data.root_quat_w
+        R = quat_to_rot_matrix(quat_w)
+
+        # Gripper center position (body offset -8cm Z)
+        gripper_offset_b = torch.tensor([0.0, 0.0, -0.08], device=self.device)
+        gripper_pos_w = pos_w + torch.bmm(
+            R, gripper_offset_b.expand(self.num_envs, 3).unsqueeze(-1)
+        ).squeeze(-1)
+
+        # Read object position directly from physics (avoid 1-step delay)
+        obj_pos = self.grasp_object.data.root_pos_w
+
+        # --- XY: PD controller to track object XY ---
+        xy_err = obj_pos[:, :2] - gripper_pos_w[:, :2]
+        ax_w = 6.0 * xy_err[:, 0] - 4.5 * vel_w[:, 0]
+        ay_w = 6.0 * xy_err[:, 1] - 4.5 * vel_w[:, 1]
+
+        # --- Z: gated descent (descend only when XY aligned) ---
+        xy_mag = torch.norm(xy_err, dim=-1)
+        descent_gate = torch.sigmoid((0.15 - xy_mag) / 0.05)
+        desired_vz = -0.40 * descent_gate
+        az_w = 4.0 * (desired_vz - vel_w[:, 2])
+
+        # Safety: strong upward push if gripper drops below box top
+        alt_above = gripper_pos_w[:, 2] - (obj_pos[:, 2] + 0.04)
+        az_w = az_w + 3.0 * (alt_above < -0.02).float()
+
+        # World → body frame
+        accel_w = torch.stack([ax_w, ay_w, az_w], dim=-1)
+        accel_b = torch.bmm(R.transpose(1, 2), accel_w.unsqueeze(-1)).squeeze(-1)
+
+        # Output: 8D action, only [:3] populated
+        base = torch.zeros(self.num_envs, 8, device=self.device)
+        base[:, :3] = accel_b.clamp(-6.0, 6.0)
+        return base
+
+    # ========================================================================
     # Scene setup
     # ========================================================================
 
@@ -167,6 +216,12 @@ class GripperDroneEnv(DirectRLEnv):
         self.prev_action = self.raw_actions.clone()
         self.raw_actions = actions.clone()
         self.scaled_actions = self._scale_action(actions)
+
+        # Hybrid analytical + RL residual for Stage 3
+        if self.cfg.stage == Stage.GRASPING:
+            base = self._compute_analytical_base()
+            self.scaled_actions[:, :3] = base[:, :3] + self.scaled_actions[:, :3] * 0.3
+            self.scaled_actions[:, :3] = self.scaled_actions[:, :3].clamp(-8.0, 8.0)
 
         # Gripper plate commands (always 8D action space)
         if self.cfg.lock_gripper:
@@ -450,8 +505,9 @@ class GripperDroneEnv(DirectRLEnv):
             r_y_align = 1.5 * y_contain * approach_gate
             r_z_below = 2.0 * z_below * approach_gate
 
-            # Staged descent: XY first, then descend
-            xy_aligned = (xy_err < 0.10).float()
+            # Staged descent: smooth transition (sigmoid) from "wait above" to "descend"
+            # xy=10cm: 0.034 (almost wait), xy=5cm: 0.5 (half descent), xy=1cm: 0.94 (full)
+            xy_aligned = torch.sigmoid((0.05 - xy_err) / 0.015)
             alt_target = self.object_pos[:, 2] + 0.25 * (1.0 - xy_aligned)
             staged_z_err = torch.abs(gripper_pos_w[:, 2] - alt_target)
             r_z = 2.0 * torch.exp(-2.0 * staged_z_err)
@@ -480,6 +536,7 @@ class GripperDroneEnv(DirectRLEnv):
 
             # Tilt
             tilt_angle = torch.acos(R[:, 2, 2].clamp(-1.0, 1.0))
+
             r_tilt_descent = -3.0 * tilt_angle * xy_aligned
             near_dock = (overlap_ratio > 0.3).float()
             r_tilt_dock = -2.0 * tilt_angle * near_dock
@@ -502,6 +559,7 @@ class GripperDroneEnv(DirectRLEnv):
                 "gripper_xy_offset": xy_err, "pos_error": pos_err,
                 "overlap_ratio": overlap_ratio, "full_contain": full_contain,
                 "column_score": column_score, "approach_gate": approach_gate,
+                "tilt_rad": tilt_angle,
             }
 
         elif self.cfg.stage == Stage.LOADED_FLIGHT:

@@ -1,0 +1,858 @@
+ env78 step 5400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env80 step 5400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env93 step 5400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.663
+  env94 step 5400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env97 step 5400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env90 step 5402: DOCKED (overlap=74%) → closing gripper
+  env41 step 5414: DOCKED (overlap=59%) → closing gripper
+  env47 step 5442: DOCKED (overlap=100%) → closing gripper
+  env56 step 5447: DOCKED (overlap=68%) → closing gripper
+  env40 step 5457: GRIPPED → attempting lift (box_z=0.540)
+  env48 step 5467: DOCKED (overlap=71%) → closing gripper
+  env85 step 5488: DOCKED (overlap=85%) → closing gripper
+  env91 step 5491: DOCKED (overlap=83%) → closing gripper
+04:21:02 [articulation.py] WARNING: The function 'set_external_force_and_torque' will be deprecated in a future release. Please use 'permanent_wrench_composer.set_forces_and_torques' instead.
+  env18 step 5536: DOCKED (overlap=100%) → closing gripper
+  env44 step 5549: DOCKED (overlap=51%) → closing gripper
+  env1 step 5550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.662
+  env6 step 5550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env7 step 5550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env11 step 5550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.669
+  env17 step 5550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.683
+  env21 step 5550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.670
+  env22 step 5550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.637
+  env32 step 5550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.677
+  env38 step 5550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.679
+  env40 step 5550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env50 step 5550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env51 step 5550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.676
+  env54 step 5550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env59 step 5550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env60 step 5550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env64 step 5550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env66 step 5550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env73 step 5550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env78 step 5550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env80 step 5550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env93 step 5550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.663
+  env94 step 5550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env97 step 5550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env67 step 5569: DOCKED (overlap=79%) → closing gripper
+  env69 step 5570: DOCKED (overlap=90%) → closing gripper
+  env37 step 5573: DOCKED (overlap=90%) → closing gripper
+  env81 step 5575: DOCKED (overlap=56%) → closing gripper
+  env77 step 5581: DOCKED (overlap=81%) → closing gripper
+  env46 step 5583: DOCKED (overlap=53%) → closing gripper
+  env88 step 5600: DOCKED (overlap=60%) → closing gripper
+  env29 step 5606: DOCKED (overlap=77%) → closing gripper
+  env87 step 5677: DOCKED (overlap=56%) → closing gripper
+  env98 step 5697: DOCKED (overlap=98%) → closing gripper
+  env1 step 5700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.662
+  env6 step 5700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env7 step 5700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env11 step 5700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.669
+  env17 step 5700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.683
+  env21 step 5700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.670
+  env22 step 5700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.637
+  env32 step 5700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.677
+  env38 step 5700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.679
+  env40 step 5700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env44 step 5700: GRIPPED → attempting lift (box_z=0.540)
+  env50 step 5700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env51 step 5700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.676
+  env54 step 5700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env59 step 5700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env60 step 5700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env64 step 5700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env66 step 5700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env73 step 5700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env78 step 5700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env80 step 5700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env93 step 5700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.663
+  env94 step 5700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env97 step 5700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env24 step 5709: DOCKED (overlap=80%) → closing gripper
+04:21:07 [articulation.py] WARNING: The function 'set_external_force_and_torque' will be deprecated in a future release. Please use 'permanent_wrench_composer.set_forces_and_torques' instead.
+  env46 step 5734: GRIPPED → attempting lift (box_z=0.540)
+  env57 step 5761: DOCKED (overlap=84%) → closing gripper
+  env72 step 5788: DOCKED (overlap=76%) → closing gripper
+  env1 step 5850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.662
+  env6 step 5850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env7 step 5850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env11 step 5850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.669
+  env17 step 5850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.683
+  env21 step 5850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.670
+  env22 step 5850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.637
+  env32 step 5850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.677
+  env38 step 5850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.679
+  env40 step 5850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env44 step 5850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env46 step 5850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.658
+  env50 step 5850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env51 step 5850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.676
+  env54 step 5850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env59 step 5850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env60 step 5850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env64 step 5850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env66 step 5850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env73 step 5850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env78 step 5850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env80 step 5850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env93 step 5850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.663
+  env94 step 5850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env97 step 5850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env92 step 5922: DOCKED (overlap=93%) → closing gripper
+04:21:12 [articulation.py] WARNING: The function 'set_external_force_and_torque' will be deprecated in a future release. Please use 'permanent_wrench_composer.set_forces_and_torques' instead.
+  env70 step 5959: DOCKED (overlap=61%) → closing gripper
+  env1 step 6000: LIFTING box_z=0.540 lift=0.0cm drone_z=0.662
+  env6 step 6000: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env7 step 6000: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env11 step 6000: LIFTING box_z=0.540 lift=0.0cm drone_z=0.669
+  env17 step 6000: LIFTING box_z=0.540 lift=0.0cm drone_z=0.683
+  env21 step 6000: LIFTING box_z=0.540 lift=0.0cm drone_z=0.670
+  env22 step 6000: LIFTING box_z=0.540 lift=0.0cm drone_z=0.637
+  env32 step 6000: LIFTING box_z=0.540 lift=0.0cm drone_z=0.677
+  env38 step 6000: LIFTING box_z=0.540 lift=0.0cm drone_z=0.679
+  env40 step 6000: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env44 step 6000: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env46 step 6000: LIFTING box_z=0.540 lift=0.0cm drone_z=0.658
+  env50 step 6000: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env51 step 6000: LIFTING box_z=0.540 lift=0.0cm drone_z=0.676
+  env54 step 6000: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env59 step 6000: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env60 step 6000: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env64 step 6000: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env66 step 6000: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env73 step 6000: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env78 step 6000: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env80 step 6000: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env93 step 6000: LIFTING box_z=0.540 lift=0.0cm drone_z=0.663
+  env94 step 6000: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env97 step 6000: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  [40s]  env0:approach(bz=0.540)  env1:lift(bz=0.540)  env2:approach(bz=0.540)  env3:approach(bz=0.540)  env4:approach(bz=0.540)  env5:approach(bz=0.540)  env6:lift(bz=0.540)  env7:lift(bz=0.540)  env8:approach(bz=0.540)  env9:approach(bz=0.540)  env10:approach(bz=0.540)  env11:lift(bz=0.540)  env12:approach(bz=0.540)  env13:approach(bz=0.540)  env14:approach(bz=0.540)  env15:approach(bz=0.540)  env16:approach(bz=0.540)  env17:lift(bz=0.540)  env18:approach(bz=0.540)  env19:approach(bz=0.540)  env20:approach(bz=0.540)  env21:lift(bz=0.540)  env22:lift(bz=0.540)  env23:approach(bz=0.540)  env24:approach(bz=0.540)  env25:approach(bz=0.540)  env26:approach(bz=0.540)  env27:approach(bz=0.540)  env28:approach(bz=0.540)  env29:approach(bz=0.540)  env30:approach(bz=0.540)  env31:approach(bz=0.540)  env32:lift(bz=0.540)  env33:approach(bz=0.540)  env34:approach(bz=0.540)  env35:approach(bz=0.540)  env36:approach(bz=0.540)  env37:approach(bz=0.540)  env38:lift(bz=0.540)  env39:approach(bz=0.540)  env40:lift(bz=0.540)  env41:approach(bz=0.540)  env42:approach(bz=0.540)  env43:approach(bz=0.540)  env44:lift(bz=0.540)  env45:approach(bz=0.540)  env46:lift(bz=0.540)  env47:approach(bz=0.540)  env48:approach(bz=0.540)  env49:approach(bz=0.540)  env50:lift(bz=0.540)  env51:lift(bz=0.540)  env52:approach(bz=0.540)  env53:approach(bz=0.540)  env54:lift(bz=0.540)  env55:approach(bz=0.540)  env56:approach(bz=0.540)  env57:approach(bz=0.540)  env58:approach(bz=0.540)  env59:lift(bz=0.540)  env60:lift(bz=0.540)  env61:approach(bz=0.540)  env62:approach(bz=0.540)  env63:approach(bz=0.540)  env64:lift(bz=0.540)  env65:approach(bz=0.540)  env66:lift(bz=0.540)  env67:approach(bz=0.540)  env68:approach(bz=0.540)  env69:approach(bz=0.540)  env70:dock(bz=0.540)  env71:approach(bz=0.540)  env72:approach(bz=0.540)  env73:lift(bz=0.540)  env74:approach(bz=0.540)  env75:approach(bz=0.540)  env76:approach(bz=0.540)  env77:approach(bz=0.540)  env78:lift(bz=0.540)  env79:approach(bz=0.540)  env80:lift(bz=0.540)  env81:approach(bz=0.540)  env82:approach(bz=0.540)  env83:approach(bz=0.540)  env84:approach(bz=0.540)  env85:approach(bz=0.540)  env86:approach(bz=0.540)  env87:approach(bz=0.540)  env88:approach(bz=0.540)  env89:approach(bz=0.540)  env90:approach(bz=0.540)  env91:approach(bz=0.540)  env92:dock(bz=0.540)  env93:lift(bz=0.540)  env94:lift(bz=0.540)  env95:approach(bz=0.540)  env96:approach(bz=0.540)  env97:lift(bz=0.540)  env98:approach(bz=0.540)  env99:approach(bz=0.540)
+  env41 step 6025: DOCKED (overlap=95%) → closing gripper
+  env83 step 6028: DOCKED (overlap=100%) → closing gripper
+  env30 step 6079: DOCKED (overlap=100%) → closing gripper
+  env96 step 6081: DOCKED (overlap=81%) → closing gripper
+  env86 step 6091: DOCKED (overlap=51%) → closing gripper
+  env62 step 6107: DOCKED (overlap=60%) → closing gripper
+  env85 step 6128: DOCKED (overlap=54%) → closing gripper
+  env55 step 6135: DOCKED (overlap=86%) → closing gripper
+04:21:17 [articulation.py] WARNING: The function 'set_external_force_and_torque' will be deprecated in a future release. Please use 'permanent_wrench_composer.set_forces_and_torques' instead.
+  env36 step 6140: DOCKED (overlap=97%) → closing gripper
+  env71 step 6146: DOCKED (overlap=63%) → closing gripper
+  env1 step 6150: LIFTING box_z=0.540 lift=0.0cm drone_z=0.662
+  env6 step 6150: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env7 step 6150: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env11 step 6150: LIFTING box_z=0.540 lift=0.0cm drone_z=0.669
+  env17 step 6150: LIFTING box_z=0.540 lift=0.0cm drone_z=0.683
+  env21 step 6150: LIFTING box_z=0.540 lift=0.0cm drone_z=0.670
+  env22 step 6150: LIFTING box_z=0.540 lift=0.0cm drone_z=0.637
+  env32 step 6150: LIFTING box_z=0.540 lift=0.0cm drone_z=0.677
+  env38 step 6150: LIFTING box_z=0.540 lift=0.0cm drone_z=0.679
+  env40 step 6150: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env44 step 6150: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env46 step 6150: LIFTING box_z=0.540 lift=0.0cm drone_z=0.658
+  env50 step 6150: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env51 step 6150: LIFTING box_z=0.540 lift=0.0cm drone_z=0.676
+  env54 step 6150: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env59 step 6150: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env60 step 6150: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env64 step 6150: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env66 step 6150: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env73 step 6150: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env78 step 6150: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env80 step 6150: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env93 step 6150: LIFTING box_z=0.540 lift=0.0cm drone_z=0.663
+  env94 step 6150: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env97 step 6150: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env23 step 6180: DOCKED (overlap=72%) → closing gripper
+  env0 step 6194: DOCKED (overlap=61%) → closing gripper
+  env74 step 6201: DOCKED (overlap=54%) → closing gripper
+  env68 step 6207: DOCKED (overlap=100%) → closing gripper
+  env99 step 6212: DOCKED (overlap=66%) → closing gripper
+  env4 step 6241: DOCKED (overlap=82%) → closing gripper
+  env86 step 6242: GRIPPED → attempting lift (box_z=0.540)
+  env3 step 6252: DOCKED (overlap=69%) → closing gripper
+  env62 step 6258: GRIPPED → attempting lift (box_z=0.540)
+  env1 step 6300: LIFTING box_z=0.540 lift=0.0cm drone_z=0.662
+  env6 step 6300: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env7 step 6300: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env11 step 6300: LIFTING box_z=0.540 lift=0.0cm drone_z=0.669
+  env17 step 6300: LIFTING box_z=0.540 lift=0.0cm drone_z=0.683
+  env21 step 6300: LIFTING box_z=0.540 lift=0.0cm drone_z=0.670
+  env22 step 6300: LIFTING box_z=0.540 lift=0.0cm drone_z=0.637
+  env32 step 6300: LIFTING box_z=0.540 lift=0.0cm drone_z=0.677
+  env38 step 6300: LIFTING box_z=0.540 lift=0.0cm drone_z=0.679
+  env40 step 6300: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env44 step 6300: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env46 step 6300: LIFTING box_z=0.540 lift=0.0cm drone_z=0.658
+  env50 step 6300: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env51 step 6300: LIFTING box_z=0.540 lift=0.0cm drone_z=0.676
+  env54 step 6300: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env59 step 6300: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env60 step 6300: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env62 step 6300: LIFTING box_z=0.540 lift=0.0cm drone_z=1.131
+  env64 step 6300: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env66 step 6300: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env73 step 6300: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env78 step 6300: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env80 step 6300: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env86 step 6300: LIFTING box_z=0.540 lift=0.0cm drone_z=0.661
+  env93 step 6300: LIFTING box_z=0.540 lift=0.0cm drone_z=0.663
+  env94 step 6300: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env97 step 6300: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env33 step 6316: DOCKED (overlap=65%) → closing gripper
+04:21:22 [articulation.py] WARNING: The function 'set_external_force_and_torque' will be deprecated in a future release. Please use 'permanent_wrench_composer.set_forces_and_torques' instead.
+  env52 step 6344: DOCKED (overlap=62%) → closing gripper
+  env74 step 6352: GRIPPED → attempting lift (box_z=0.540)
+  env56 step 6363: DOCKED (overlap=56%) → closing gripper
+  env69 step 6384: DOCKED (overlap=85%) → closing gripper
+  env1 step 6450: LIFTING box_z=0.540 lift=0.0cm drone_z=0.662
+  env6 step 6450: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env7 step 6450: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env11 step 6450: LIFTING box_z=0.540 lift=0.0cm drone_z=0.669
+  env17 step 6450: LIFTING box_z=0.540 lift=0.0cm drone_z=0.683
+  env21 step 6450: LIFTING box_z=0.540 lift=0.0cm drone_z=0.670
+  env22 step 6450: LIFTING box_z=0.540 lift=0.0cm drone_z=0.637
+  env32 step 6450: LIFTING box_z=0.540 lift=0.0cm drone_z=0.677
+  env38 step 6450: LIFTING box_z=0.540 lift=0.0cm drone_z=0.679
+  env40 step 6450: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env44 step 6450: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env46 step 6450: LIFTING box_z=0.540 lift=0.0cm drone_z=0.658
+  env50 step 6450: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env51 step 6450: LIFTING box_z=0.540 lift=0.0cm drone_z=0.676
+  env54 step 6450: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env59 step 6450: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env60 step 6450: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env62 step 6450: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env64 step 6450: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env66 step 6450: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env73 step 6450: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env74 step 6450: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env78 step 6450: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env80 step 6450: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env86 step 6450: LIFTING box_z=0.540 lift=0.0cm drone_z=0.661
+  env93 step 6450: LIFTING box_z=0.540 lift=0.0cm drone_z=0.663
+  env94 step 6450: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env97 step 6450: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env33 step 6467: GRIPPED → attempting lift (box_z=0.540)
+  env34 step 6474: DOCKED (overlap=69%) → closing gripper
+  env10 step 6538: DOCKED (overlap=70%) → closing gripper
+  env58 step 6549: DOCKED (overlap=58%) → closing gripper
+04:21:27 [articulation.py] WARNING: The function 'set_external_force_and_torque' will be deprecated in a future release. Please use 'permanent_wrench_composer.set_forces_and_torques' instead.
+  env14 step 6584: DOCKED (overlap=100%) → closing gripper
+  env81 step 6586: DOCKED (overlap=95%) → closing gripper
+  env1 step 6600: LIFTING box_z=0.540 lift=0.0cm drone_z=0.662
+  env6 step 6600: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env7 step 6600: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env11 step 6600: LIFTING box_z=0.540 lift=0.0cm drone_z=0.669
+  env17 step 6600: LIFTING box_z=0.540 lift=0.0cm drone_z=0.683
+  env21 step 6600: LIFTING box_z=0.540 lift=0.0cm drone_z=0.670
+  env22 step 6600: LIFTING box_z=0.540 lift=0.0cm drone_z=0.637
+  env32 step 6600: LIFTING box_z=0.540 lift=0.0cm drone_z=0.677
+  env33 step 6600: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env38 step 6600: LIFTING box_z=0.540 lift=0.0cm drone_z=0.679
+  env40 step 6600: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env44 step 6600: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env46 step 6600: LIFTING box_z=0.540 lift=0.0cm drone_z=0.658
+  env50 step 6600: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env51 step 6600: LIFTING box_z=0.540 lift=0.0cm drone_z=0.676
+  env54 step 6600: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env59 step 6600: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env60 step 6600: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env64 step 6600: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env66 step 6600: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env73 step 6600: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env74 step 6600: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env78 step 6600: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env80 step 6600: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env86 step 6600: LIFTING box_z=0.540 lift=0.0cm drone_z=0.661
+  env93 step 6600: LIFTING box_z=0.540 lift=0.0cm drone_z=0.663
+  env94 step 6600: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env97 step 6600: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env8 step 6625: DOCKED (overlap=62%) → closing gripper
+  env76 step 6629: DOCKED (overlap=56%) → closing gripper
+  env57 step 6641: DOCKED (overlap=54%) → closing gripper
+  env53 step 6686: DOCKED (overlap=80%) → closing gripper
+  env96 step 6699: DOCKED (overlap=81%) → closing gripper
+  env1 step 6750: LIFTING box_z=0.540 lift=0.0cm drone_z=0.662
+  env6 step 6750: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env7 step 6750: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env11 step 6750: LIFTING box_z=0.540 lift=0.0cm drone_z=0.669
+  env17 step 6750: LIFTING box_z=0.540 lift=0.0cm drone_z=0.683
+  env21 step 6750: LIFTING box_z=0.540 lift=0.0cm drone_z=0.670
+  env22 step 6750: LIFTING box_z=0.540 lift=0.0cm drone_z=0.637
+  env32 step 6750: LIFTING box_z=0.540 lift=0.0cm drone_z=0.677
+  env33 step 6750: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env38 step 6750: LIFTING box_z=0.540 lift=0.0cm drone_z=0.679
+  env40 step 6750: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env44 step 6750: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env46 step 6750: LIFTING box_z=0.540 lift=0.0cm drone_z=0.658
+  env50 step 6750: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env51 step 6750: LIFTING box_z=0.540 lift=0.0cm drone_z=0.676
+  env54 step 6750: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env59 step 6750: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env60 step 6750: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env64 step 6750: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env66 step 6750: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env73 step 6750: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env74 step 6750: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env78 step 6750: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env80 step 6750: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env86 step 6750: LIFTING box_z=0.540 lift=0.0cm drone_z=0.661
+  env93 step 6750: LIFTING box_z=0.540 lift=0.0cm drone_z=0.663
+  env94 step 6750: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env97 step 6750: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+04:21:32 [articulation.py] WARNING: The function 'set_external_force_and_torque' will be deprecated in a future release. Please use 'permanent_wrench_composer.set_forces_and_torques' instead.
+  env42 step 6763: DOCKED (overlap=84%) → closing gripper
+  env36 step 6765: DOCKED (overlap=88%) → closing gripper
+  env76 step 6780: GRIPPED → attempting lift (box_z=0.540)
+  env55 step 6781: DOCKED (overlap=82%) → closing gripper
+  env9 step 6800: DOCKED (overlap=81%) → closing gripper
+  env88 step 6809: DOCKED (overlap=60%) → closing gripper
+  env75 step 6819: DOCKED (overlap=87%) → closing gripper
+  env24 step 6823: DOCKED (overlap=80%) → closing gripper
+  env2 step 6874: DOCKED (overlap=86%) → closing gripper
+  env99 step 6874: DOCKED (overlap=98%) → closing gripper
+  env35 step 6892: DOCKED (overlap=97%) → closing gripper
+  env1 step 6900: LIFTING box_z=0.540 lift=0.0cm drone_z=0.662
+  env6 step 6900: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env7 step 6900: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env11 step 6900: LIFTING box_z=0.540 lift=0.0cm drone_z=0.669
+  env17 step 6900: LIFTING box_z=0.540 lift=0.0cm drone_z=0.683
+  env21 step 6900: LIFTING box_z=0.540 lift=0.0cm drone_z=0.670
+  env22 step 6900: LIFTING box_z=0.540 lift=0.0cm drone_z=0.637
+  env32 step 6900: LIFTING box_z=0.540 lift=0.0cm drone_z=0.677
+  env33 step 6900: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env38 step 6900: LIFTING box_z=0.540 lift=0.0cm drone_z=0.679
+  env40 step 6900: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env44 step 6900: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env46 step 6900: LIFTING box_z=0.540 lift=0.0cm drone_z=0.658
+  env50 step 6900: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env51 step 6900: LIFTING box_z=0.540 lift=0.0cm drone_z=0.676
+  env54 step 6900: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env59 step 6900: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env60 step 6900: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env64 step 6900: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env66 step 6900: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env73 step 6900: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env74 step 6900: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env76 step 6900: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env78 step 6900: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env80 step 6900: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env86 step 6900: LIFTING box_z=0.540 lift=0.0cm drone_z=0.661
+  env93 step 6900: LIFTING box_z=0.540 lift=0.0cm drone_z=0.663
+  env94 step 6900: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env97 step 6900: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env26 step 6911: DOCKED (overlap=56%) → closing gripper
+  env82 step 6916: DOCKED (overlap=60%) → closing gripper
+04:21:37 [articulation.py] WARNING: The function 'set_external_force_and_torque' will be deprecated in a future release. Please use 'permanent_wrench_composer.set_forces_and_torques' instead.
+  env79 step 6974: DOCKED (overlap=72%) → closing gripper
+  env61 step 7002: DOCKED (overlap=96%) → closing gripper
+  env1 step 7050: LIFTING box_z=0.540 lift=0.0cm drone_z=0.662
+  env6 step 7050: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env7 step 7050: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env11 step 7050: LIFTING box_z=0.540 lift=0.0cm drone_z=0.669
+  env17 step 7050: LIFTING box_z=0.540 lift=0.0cm drone_z=0.683
+  env21 step 7050: LIFTING box_z=0.540 lift=0.0cm drone_z=0.670
+  env22 step 7050: LIFTING box_z=0.540 lift=0.0cm drone_z=0.637
+  env32 step 7050: LIFTING box_z=0.540 lift=0.0cm drone_z=0.677
+  env33 step 7050: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env38 step 7050: LIFTING box_z=0.540 lift=0.0cm drone_z=0.679
+  env40 step 7050: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env44 step 7050: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env46 step 7050: LIFTING box_z=0.540 lift=0.0cm drone_z=0.658
+  env50 step 7050: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env51 step 7050: LIFTING box_z=0.540 lift=0.0cm drone_z=0.676
+  env54 step 7050: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env59 step 7050: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env60 step 7050: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env64 step 7050: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env66 step 7050: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env73 step 7050: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env74 step 7050: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env76 step 7050: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env78 step 7050: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env80 step 7050: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env86 step 7050: LIFTING box_z=0.540 lift=0.0cm drone_z=0.661
+  env93 step 7050: LIFTING box_z=0.540 lift=0.0cm drone_z=0.663
+  env94 step 7050: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env97 step 7050: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env15 step 7060: DOCKED (overlap=86%) → closing gripper
+  env26 step 7062: GRIPPED → attempting lift (box_z=0.540)
+  env41 step 7067: DOCKED (overlap=65%) → closing gripper
+04:21:42 [articulation.py] WARNING: The function 'set_external_force_and_torque' will be deprecated in a future release. Please use 'permanent_wrench_composer.set_forces_and_torques' instead.
+  env77 step 7196: DOCKED (overlap=59%) → closing gripper
+  env1 step 7200: LIFTING box_z=0.540 lift=0.0cm drone_z=0.662
+  env6 step 7200: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env7 step 7200: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env11 step 7200: LIFTING box_z=0.540 lift=0.0cm drone_z=0.669
+  env17 step 7200: LIFTING box_z=0.540 lift=0.0cm drone_z=0.683
+  env21 step 7200: LIFTING box_z=0.540 lift=0.0cm drone_z=0.670
+  env22 step 7200: LIFTING box_z=0.540 lift=0.0cm drone_z=0.637
+  env26 step 7200: LIFTING box_z=0.540 lift=0.0cm drone_z=0.657
+  env32 step 7200: LIFTING box_z=0.540 lift=0.0cm drone_z=0.677
+  env33 step 7200: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env38 step 7200: LIFTING box_z=0.540 lift=0.0cm drone_z=0.679
+  env40 step 7200: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env44 step 7200: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env46 step 7200: LIFTING box_z=0.540 lift=0.0cm drone_z=0.658
+  env50 step 7200: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env51 step 7200: LIFTING box_z=0.540 lift=0.0cm drone_z=0.676
+  env54 step 7200: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env59 step 7200: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env60 step 7200: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env64 step 7200: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env66 step 7200: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env73 step 7200: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env74 step 7200: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env76 step 7200: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env78 step 7200: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env80 step 7200: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env86 step 7200: LIFTING box_z=0.540 lift=0.0cm drone_z=0.661
+  env93 step 7200: LIFTING box_z=0.540 lift=0.0cm drone_z=0.663
+  env94 step 7200: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env97 step 7200: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env87 step 7202: DOCKED (overlap=57%) → closing gripper
+  env47 step 7203: DOCKED (overlap=95%) → closing gripper
+  env19 step 7212: DOCKED (overlap=50%) → closing gripper
+  env71 step 7228: DOCKED (overlap=69%) → closing gripper
+  env37 step 7235: DOCKED (overlap=72%) → closing gripper
+  env18 step 7250: DOCKED (overlap=52%) → closing gripper
+  env23 step 7255: DOCKED (overlap=74%) → closing gripper
+  env70 step 7278: DOCKED (overlap=96%) → closing gripper
+  env4 step 7289: DOCKED (overlap=55%) → closing gripper
+  env90 step 7312: DOCKED (overlap=67%) → closing gripper
+  env1 step 7350: LIFTING box_z=0.540 lift=0.0cm drone_z=0.662
+  env6 step 7350: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env7 step 7350: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env11 step 7350: LIFTING box_z=0.540 lift=0.0cm drone_z=0.669
+  env17 step 7350: LIFTING box_z=0.540 lift=0.0cm drone_z=0.683
+  env21 step 7350: LIFTING box_z=0.540 lift=0.0cm drone_z=0.670
+  env22 step 7350: LIFTING box_z=0.540 lift=0.0cm drone_z=0.637
+  env26 step 7350: LIFTING box_z=0.540 lift=0.0cm drone_z=0.657
+  env32 step 7350: LIFTING box_z=0.540 lift=0.0cm drone_z=0.677
+  env33 step 7350: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env38 step 7350: LIFTING box_z=0.540 lift=0.0cm drone_z=0.679
+  env40 step 7350: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env44 step 7350: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env46 step 7350: LIFTING box_z=0.540 lift=0.0cm drone_z=0.658
+  env50 step 7350: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env51 step 7350: LIFTING box_z=0.540 lift=0.0cm drone_z=0.676
+  env54 step 7350: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env59 step 7350: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env60 step 7350: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env64 step 7350: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env66 step 7350: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env73 step 7350: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env74 step 7350: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env76 step 7350: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env78 step 7350: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env80 step 7350: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env86 step 7350: LIFTING box_z=0.540 lift=0.0cm drone_z=0.661
+  env93 step 7350: LIFTING box_z=0.540 lift=0.0cm drone_z=0.663
+  env94 step 7350: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env97 step 7350: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+04:21:47 [articulation.py] WARNING: The function 'set_external_force_and_torque' will be deprecated in a future release. Please use 'permanent_wrench_composer.set_forces_and_torques' instead.
+  env30 step 7378: DOCKED (overlap=54%) → closing gripper
+  env13 step 7400: DOCKED (overlap=90%) → closing gripper
+  env81 step 7463: DOCKED (overlap=87%) → closing gripper
+  env90 step 7463: GRIPPED → attempting lift (box_z=0.540)
+  env1 step 7500: LIFTING box_z=0.540 lift=0.0cm drone_z=0.662
+  env6 step 7500: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env7 step 7500: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env11 step 7500: LIFTING box_z=0.540 lift=0.0cm drone_z=0.669
+  env17 step 7500: LIFTING box_z=0.540 lift=0.0cm drone_z=0.683
+  env21 step 7500: LIFTING box_z=0.540 lift=0.0cm drone_z=0.670
+  env22 step 7500: LIFTING box_z=0.540 lift=0.0cm drone_z=0.637
+  env26 step 7500: LIFTING box_z=0.540 lift=0.0cm drone_z=0.657
+  env32 step 7500: LIFTING box_z=0.540 lift=0.0cm drone_z=0.677
+  env33 step 7500: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env38 step 7500: LIFTING box_z=0.540 lift=0.0cm drone_z=0.679
+  env40 step 7500: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env44 step 7500: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env46 step 7500: LIFTING box_z=0.540 lift=0.0cm drone_z=0.658
+  env50 step 7500: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env51 step 7500: LIFTING box_z=0.540 lift=0.0cm drone_z=0.676
+  env54 step 7500: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env59 step 7500: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env60 step 7500: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env64 step 7500: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env66 step 7500: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env73 step 7500: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env74 step 7500: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env76 step 7500: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env78 step 7500: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env80 step 7500: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env86 step 7500: LIFTING box_z=0.540 lift=0.0cm drone_z=0.661
+  env90 step 7500: LIFTING box_z=0.540 lift=0.0cm drone_z=0.680
+  env93 step 7500: LIFTING box_z=0.540 lift=0.0cm drone_z=0.663
+  env94 step 7500: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env97 step 7500: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env99 step 7581: DOCKED (overlap=80%) → closing gripper
+04:21:52 [articulation.py] WARNING: The function 'set_external_force_and_torque' will be deprecated in a future release. Please use 'permanent_wrench_composer.set_forces_and_torques' instead.
+  env31 step 7625: DOCKED (overlap=60%) → closing gripper
+  env1 step 7650: LIFTING box_z=0.540 lift=0.0cm drone_z=0.662
+  env6 step 7650: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env7 step 7650: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env11 step 7650: LIFTING box_z=0.540 lift=0.0cm drone_z=0.669
+  env17 step 7650: LIFTING box_z=0.540 lift=0.0cm drone_z=0.683
+  env21 step 7650: LIFTING box_z=0.540 lift=0.0cm drone_z=0.670
+  env22 step 7650: LIFTING box_z=0.540 lift=0.0cm drone_z=0.637
+  env26 step 7650: LIFTING box_z=0.540 lift=0.0cm drone_z=0.657
+  env32 step 7650: LIFTING box_z=0.540 lift=0.0cm drone_z=0.677
+  env33 step 7650: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env38 step 7650: LIFTING box_z=0.540 lift=0.0cm drone_z=0.679
+  env40 step 7650: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env44 step 7650: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env46 step 7650: LIFTING box_z=0.540 lift=0.0cm drone_z=0.658
+  env50 step 7650: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env51 step 7650: LIFTING box_z=0.540 lift=0.0cm drone_z=0.676
+  env54 step 7650: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env59 step 7650: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env60 step 7650: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env64 step 7650: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env66 step 7650: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env73 step 7650: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env74 step 7650: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env76 step 7650: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env78 step 7650: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env80 step 7650: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env86 step 7650: LIFTING box_z=0.540 lift=0.0cm drone_z=0.661
+  env90 step 7650: LIFTING box_z=0.540 lift=0.0cm drone_z=0.680
+  env93 step 7650: LIFTING box_z=0.540 lift=0.0cm drone_z=0.663
+  env94 step 7650: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env97 step 7650: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env61 step 7652: DOCKED (overlap=68%) → closing gripper
+  env9 step 7687: DOCKED (overlap=80%) → closing gripper
+  env39 step 7716: DOCKED (overlap=88%) → closing gripper
+  env53 step 7722: DOCKED (overlap=91%) → closing gripper
+  env68 step 7726: DOCKED (overlap=64%) → closing gripper
+  env87 step 7790: DOCKED (overlap=85%) → closing gripper
+  env69 step 7792: DOCKED (overlap=76%) → closing gripper
+04:21:57 [articulation.py] WARNING: The function 'set_external_force_and_torque' will be deprecated in a future release. Please use 'permanent_wrench_composer.set_forces_and_torques' instead.
+  env1 step 7800: LIFTING box_z=0.540 lift=0.0cm drone_z=0.662
+  env6 step 7800: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env7 step 7800: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env11 step 7800: LIFTING box_z=0.540 lift=0.0cm drone_z=0.669
+  env17 step 7800: LIFTING box_z=0.540 lift=0.0cm drone_z=0.683
+  env21 step 7800: LIFTING box_z=0.540 lift=0.0cm drone_z=0.670
+  env22 step 7800: LIFTING box_z=0.540 lift=0.0cm drone_z=0.637
+  env26 step 7800: LIFTING box_z=0.540 lift=0.0cm drone_z=0.657
+  env32 step 7800: LIFTING box_z=0.540 lift=0.0cm drone_z=0.677
+  env33 step 7800: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env38 step 7800: LIFTING box_z=0.540 lift=0.0cm drone_z=0.679
+  env40 step 7800: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env44 step 7800: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env46 step 7800: LIFTING box_z=0.540 lift=0.0cm drone_z=0.658
+  env50 step 7800: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env51 step 7800: LIFTING box_z=0.540 lift=0.0cm drone_z=0.676
+  env54 step 7800: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env59 step 7800: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env60 step 7800: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env64 step 7800: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env66 step 7800: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env73 step 7800: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env74 step 7800: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env76 step 7800: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env78 step 7800: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env80 step 7800: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env86 step 7800: LIFTING box_z=0.540 lift=0.0cm drone_z=0.661
+  env90 step 7800: LIFTING box_z=0.540 lift=0.0cm drone_z=0.680
+  env93 step 7800: LIFTING box_z=0.540 lift=0.0cm drone_z=0.663
+  env94 step 7800: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env97 step 7800: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env27 step 7805: DOCKED (overlap=71%) → closing gripper
+  env45 step 7835: DOCKED (overlap=68%) → closing gripper
+  env67 step 7836: DOCKED (overlap=50%) → closing gripper
+  env48 step 7853: DOCKED (overlap=66%) → closing gripper
+  env95 step 7887: DOCKED (overlap=92%) → closing gripper
+  env15 step 7892: DOCKED (overlap=68%) → closing gripper
+  env88 step 7893: DOCKED (overlap=80%) → closing gripper
+  env14 step 7933: DOCKED (overlap=90%) → closing gripper
+  env1 step 7950: LIFTING box_z=0.540 lift=0.0cm drone_z=0.662
+  env6 step 7950: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env7 step 7950: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env11 step 7950: LIFTING box_z=0.540 lift=0.0cm drone_z=0.669
+  env17 step 7950: LIFTING box_z=0.540 lift=0.0cm drone_z=0.683
+  env21 step 7950: LIFTING box_z=0.540 lift=0.0cm drone_z=0.670
+  env22 step 7950: LIFTING box_z=0.540 lift=0.0cm drone_z=0.637
+  env26 step 7950: LIFTING box_z=0.540 lift=0.0cm drone_z=0.657
+  env32 step 7950: LIFTING box_z=0.540 lift=0.0cm drone_z=0.677
+  env33 step 7950: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env38 step 7950: LIFTING box_z=0.540 lift=0.0cm drone_z=0.679
+  env40 step 7950: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env44 step 7950: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env46 step 7950: LIFTING box_z=0.540 lift=0.0cm drone_z=0.658
+  env50 step 7950: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env51 step 7950: LIFTING box_z=0.540 lift=0.0cm drone_z=0.676
+  env54 step 7950: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env59 step 7950: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env60 step 7950: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env64 step 7950: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env66 step 7950: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env73 step 7950: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env74 step 7950: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env76 step 7950: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env78 step 7950: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env80 step 7950: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env86 step 7950: LIFTING box_z=0.540 lift=0.0cm drone_z=0.661
+  env90 step 7950: LIFTING box_z=0.540 lift=0.0cm drone_z=0.680
+  env93 step 7950: LIFTING box_z=0.540 lift=0.0cm drone_z=0.663
+  env94 step 7950: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env97 step 7950: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env18 step 7960: DOCKED (overlap=71%) → closing gripper
+  env96 step 7994: DOCKED (overlap=54%) → closing gripper
+  env3 step 7996: DOCKED (overlap=60%) → closing gripper
+  env70 step 7999: DOCKED (overlap=94%) → closing gripper
+04:22:02 [articulation.py] WARNING: The function 'set_external_force_and_torque' will be deprecated in a future release. Please use 'permanent_wrench_composer.set_forces_and_torques' instead.
+  env43 step 8028: DOCKED (overlap=93%) → closing gripper
+  env5 step 8065: DOCKED (overlap=60%) → closing gripper
+  env58 step 8075: DOCKED (overlap=87%) → closing gripper
+  env36 step 8081: DOCKED (overlap=100%) → closing gripper
+  env1 step 8100: LIFTING box_z=0.540 lift=0.0cm drone_z=0.662
+  env6 step 8100: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env7 step 8100: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env11 step 8100: LIFTING box_z=0.540 lift=0.0cm drone_z=0.669
+  env17 step 8100: LIFTING box_z=0.540 lift=0.0cm drone_z=0.683
+  env21 step 8100: LIFTING box_z=0.540 lift=0.0cm drone_z=0.670
+  env22 step 8100: LIFTING box_z=0.540 lift=0.0cm drone_z=0.637
+  env26 step 8100: LIFTING box_z=0.540 lift=0.0cm drone_z=0.657
+  env32 step 8100: LIFTING box_z=0.540 lift=0.0cm drone_z=0.677
+  env33 step 8100: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env38 step 8100: LIFTING box_z=0.540 lift=0.0cm drone_z=0.679
+  env40 step 8100: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env44 step 8100: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env46 step 8100: LIFTING box_z=0.540 lift=0.0cm drone_z=0.658
+  env50 step 8100: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env51 step 8100: LIFTING box_z=0.540 lift=0.0cm drone_z=0.676
+  env54 step 8100: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env59 step 8100: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env60 step 8100: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env64 step 8100: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env66 step 8100: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env73 step 8100: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env74 step 8100: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env76 step 8100: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env78 step 8100: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env80 step 8100: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env86 step 8100: LIFTING box_z=0.540 lift=0.0cm drone_z=0.661
+  env90 step 8100: LIFTING box_z=0.540 lift=0.0cm drone_z=0.680
+  env93 step 8100: LIFTING box_z=0.540 lift=0.0cm drone_z=0.663
+  env94 step 8100: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env97 step 8100: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env19 step 8130: DOCKED (overlap=60%) → closing gripper
+  env37 step 8146: DOCKED (overlap=54%) → closing gripper
+  env3 step 8147: GRIPPED → attempting lift (box_z=0.540)
+04:22:07 [articulation.py] WARNING: The function 'set_external_force_and_torque' will be deprecated in a future release. Please use 'permanent_wrench_composer.set_forces_and_torques' instead.
+  env5 step 8216: GRIPPED → attempting lift (box_z=0.540)
+  env52 step 8223: DOCKED (overlap=92%) → closing gripper
+  env1 step 8250: LIFTING box_z=0.540 lift=0.0cm drone_z=0.662
+  env3 step 8250: LIFTING box_z=0.540 lift=0.0cm drone_z=0.677
+  env5 step 8250: LIFTING box_z=0.540 lift=0.0cm drone_z=0.666
+  env6 step 8250: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env7 step 8250: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env11 step 8250: LIFTING box_z=0.540 lift=0.0cm drone_z=0.669
+  env17 step 8250: LIFTING box_z=0.540 lift=0.0cm drone_z=0.683
+  env21 step 8250: LIFTING box_z=0.540 lift=0.0cm drone_z=0.670
+  env22 step 8250: LIFTING box_z=0.540 lift=0.0cm drone_z=0.637
+  env26 step 8250: LIFTING box_z=0.540 lift=0.0cm drone_z=0.657
+  env32 step 8250: LIFTING box_z=0.540 lift=0.0cm drone_z=0.677
+  env33 step 8250: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env38 step 8250: LIFTING box_z=0.540 lift=0.0cm drone_z=0.679
+  env40 step 8250: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env44 step 8250: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env46 step 8250: LIFTING box_z=0.540 lift=0.0cm drone_z=0.658
+  env50 step 8250: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env51 step 8250: LIFTING box_z=0.540 lift=0.0cm drone_z=0.676
+  env54 step 8250: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env59 step 8250: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env60 step 8250: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env64 step 8250: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env66 step 8250: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env73 step 8250: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env74 step 8250: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env76 step 8250: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env78 step 8250: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env80 step 8250: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env86 step 8250: LIFTING box_z=0.540 lift=0.0cm drone_z=0.661
+  env90 step 8250: LIFTING box_z=0.540 lift=0.0cm drone_z=0.680
+  env93 step 8250: LIFTING box_z=0.540 lift=0.0cm drone_z=0.663
+  env94 step 8250: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env97 step 8250: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env37 step 8297: GRIPPED → attempting lift (box_z=0.540)
+  env12 step 8361: DOCKED (overlap=75%) → closing gripper
+  env55 step 8375: DOCKED (overlap=79%) → closing gripper
+  env10 step 8388: DOCKED (overlap=53%) → closing gripper
+  env1 step 8400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.662
+  env3 step 8400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.677
+  env5 step 8400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.666
+  env6 step 8400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env7 step 8400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env11 step 8400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.669
+  env17 step 8400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.683
+  env21 step 8400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.670
+  env22 step 8400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.637
+  env26 step 8400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.657
+  env32 step 8400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.677
+  env33 step 8400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env37 step 8400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.670
+  env38 step 8400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.679
+  env40 step 8400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env44 step 8400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env46 step 8400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.658
+  env50 step 8400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env51 step 8400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.676
+  env54 step 8400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env59 step 8400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env60 step 8400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env64 step 8400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env66 step 8400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env73 step 8400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env74 step 8400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env76 step 8400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env78 step 8400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env80 step 8400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env86 step 8400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.661
+  env90 step 8400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.680
+  env93 step 8400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.663
+  env94 step 8400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env97 step 8400: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+04:22:12 [articulation.py] WARNING: The function 'set_external_force_and_torque' will be deprecated in a future release. Please use 'permanent_wrench_composer.set_forces_and_torques' instead.
+  env34 step 8424: DOCKED (overlap=95%) → closing gripper
+  env39 step 8452: DOCKED (overlap=86%) → closing gripper
+  env68 step 8488: DOCKED (overlap=73%) → closing gripper
+  env20 step 8502: DOCKED (overlap=59%) → closing gripper
+  env30 step 8512: DOCKED (overlap=100%) → closing gripper
+  env14 step 8530: DOCKED (overlap=99%) → closing gripper
+  env1 step 8550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.662
+  env3 step 8550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.677
+  env5 step 8550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.666
+  env6 step 8550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env7 step 8550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env11 step 8550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.669
+  env17 step 8550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.683
+  env21 step 8550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.670
+  env22 step 8550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.637
+  env26 step 8550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.657
+  env32 step 8550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.677
+  env33 step 8550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env37 step 8550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.670
+  env38 step 8550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.679
+  env40 step 8550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env44 step 8550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env46 step 8550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.658
+  env50 step 8550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env51 step 8550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.676
+  env54 step 8550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env59 step 8550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env60 step 8550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env64 step 8550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env66 step 8550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env73 step 8550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env74 step 8550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env76 step 8550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env78 step 8550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env80 step 8550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env86 step 8550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.661
+  env90 step 8550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.680
+  env93 step 8550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.663
+  env94 step 8550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env97 step 8550: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env53 step 8551: DOCKED (overlap=71%) → closing gripper
+  env95 step 8577: DOCKED (overlap=82%) → closing gripper
+04:22:17 [articulation.py] WARNING: The function 'set_external_force_and_torque' will be deprecated in a future release. Please use 'permanent_wrench_composer.set_forces_and_torques' instead.
+  env99 step 8623: DOCKED (overlap=83%) → closing gripper
+  env4 step 8681: DOCKED (overlap=75%) → closing gripper
+  env1 step 8700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.662
+  env3 step 8700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.677
+  env5 step 8700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.666
+  env6 step 8700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env7 step 8700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env11 step 8700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.669
+  env17 step 8700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.683
+  env21 step 8700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.670
+  env22 step 8700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.637
+  env26 step 8700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.657
+  env32 step 8700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.677
+  env33 step 8700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env37 step 8700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.670
+  env38 step 8700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.679
+  env40 step 8700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env44 step 8700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env46 step 8700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.658
+  env50 step 8700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env51 step 8700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.676
+  env54 step 8700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env59 step 8700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env60 step 8700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env64 step 8700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env66 step 8700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env73 step 8700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env74 step 8700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env76 step 8700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env78 step 8700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env80 step 8700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env86 step 8700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.661
+  env90 step 8700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.680
+  env93 step 8700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.663
+  env94 step 8700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env97 step 8700: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env16 step 8803: DOCKED (overlap=52%) → closing gripper
+  env96 step 8803: DOCKED (overlap=100%) → closing gripper
+04:22:22 [articulation.py] WARNING: The function 'set_external_force_and_torque' will be deprecated in a future release. Please use 'permanent_wrench_composer.set_forces_and_torques' instead.
+  env1 step 8850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.662
+  env3 step 8850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.677
+  env5 step 8850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.666
+  env6 step 8850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env7 step 8850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env11 step 8850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.669
+  env17 step 8850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.683
+  env21 step 8850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.670
+  env22 step 8850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.637
+  env26 step 8850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.657
+  env32 step 8850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.677
+  env33 step 8850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env37 step 8850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.670
+  env38 step 8850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.679
+  env40 step 8850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env44 step 8850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env46 step 8850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.658
+  env50 step 8850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env51 step 8850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.676
+  env54 step 8850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env59 step 8850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env60 step 8850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env64 step 8850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.667
+  env66 step 8850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.673
+  env73 step 8850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env74 step 8850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env76 step 8850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.678
+  env78 step 8850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.674
+  env80 step 8850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.656
+  env86 step 8850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.661
+  env90 step 8850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.680
+  env93 step 8850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.663
+  env94 step 8850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.671
+  env97 step 8850: LIFTING box_z=0.540 lift=0.0cm drone_z=0.659
+  env42 step 8877: DOCKED (overlap=72%) → closing gripper
+  env91 step 8883: DOCKED (overlap=66%) → closing gripper
+  env88 step 8908: DOCKED (overlap=70%) → closing gripper
+  env45 step 8916: DOCKED (overlap=64%) → closing gripper
+  env23 step 8930: DOCKED (overlap=93%) → closing gripper
+  env27 step 8934: DOCKED (overlap=77%) → closing gripper
+  env56 step 8939: DOCKED (overlap=64%) → closing gripper
+  env9 step 8950: DOCKED (overlap=100%) → closing gripper
+  env16 step 8954: GRIPPED → attempting lift (box_z=0.540)
+  env18 step 8998: DOCKED (overlap=89%) → closing gripper
+
+=== RESULTS ===
+  Total episodes: 759
+  success: 0/759 (0.0%)
+  lift: 44/759 (5.8%)
+  dock: 343/759 (45.2%)
+  approach: 372/759 (49.0%)
+  Lift successes: 0/759
+  Lift heights: mean=0.0cm  max=0.0cm  min=0.0cm
+(isaaclab311) leesg17@Ubuntu4090:~/Github/soltronev3$ 

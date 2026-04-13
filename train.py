@@ -83,7 +83,7 @@ def configure_stage3(cfg: GripperDroneEnvCfg, substage: str):
         cfg.approach_start_z = (0.7, 1.7)
         cfg.grasp_trigger_dist = 0.15    # gripper-to-object distance for grasp detection
         cfg.grasp_plate_threshold = 0.1  # plates must be < 0.1 rad to count as closed
-        cfg.episode_length_s = 40.0      # long episode: approach ~6s + hold ~34s → 85%+ hold
+        cfg.episode_length_s = 8.0       # match sigmoid baseline (was 40.0)
     elif substage == "b":
         # Full-range physics-based grasp: start 1-3m from object
         cfg.auto_grasp = False
