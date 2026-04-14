@@ -160,7 +160,7 @@ class GripperDroneEnv(DirectRLEnv):
         # Read object position directly from physics (avoid 1-step delay)
         obj_pos = self.grasp_object.data.root_pos_w
 
-        # --- XY: World-frame PD with asymmetric gains ---
+        # --- XY: PID with asymmetric gains ---
         xy_err = obj_pos[:, :2] - gripper_pos_w[:, :2]
         xy_mag = torch.norm(xy_err, dim=-1)
 
@@ -170,22 +170,36 @@ class GripperDroneEnv(DirectRLEnv):
                         * torch.sigmoid((0.05 - xy_mag) / 0.02))
 
         # Asymmetric gains (yaw≈0: world X = strut direction, tight margin 1cm)
-        #                          (world Y = plate direction, loose margin 6.4cm)
-        Kp_x = 12.0 - 6.0 * dock_proximity    # 12.0 → 6.0 near dock
-        Kd_x = 8.0 + 4.0 * dock_proximity     #  8.0 → 12.0 near dock
-        Kp_y = 6.0 - 3.0 * dock_proximity     #  6.0 → 3.0 near dock
-        Kd_y = 5.0 + 2.5 * dock_proximity     #  5.0 → 7.5 near dock
+        Kp_x = 12.0 - 6.0 * dock_proximity
+        Kd_x = 8.0 + 4.0 * dock_proximity
+        Kp_y = 6.0 - 3.0 * dock_proximity
+        Kd_y = 5.0 + 2.5 * dock_proximity
 
         ax_w = Kp_x * xy_err[:, 0] - Kd_x * vel_w[:, 0]
         ay_w = Kp_y * xy_err[:, 1] - Kd_y * vel_w[:, 1]
 
-        # --- Z: gated descent (descend only when XY aligned) ---
-        descent_gate = torch.sigmoid((0.15 - xy_mag) / 0.05)
+        # --- Z: gated descent (sharp gate — descend only when well aligned) ---
+        descent_gate = torch.sigmoid((0.10 - xy_mag) / 0.03)
 
         # Altitude-dependent speed: fast when high, slow near box for soft contact
         speed_scale = torch.sigmoid((alt_above - 0.15) / 0.05)
         max_vz = -0.15 + (-0.40 + 0.15) * speed_scale
         desired_vz = max_vz * descent_gate
+
+        # --- Stuck detection: one strut on box edge, drone frozen ---
+        # Wider thresholds: tilted drone has gripper center higher, PD micro-oscillation
+        if not hasattr(self, '_stuck_count'):
+            self._stuck_count = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
+        vel_xy_mag = torch.norm(vel_w[:, :2], dim=-1)
+        vel_mag = torch.norm(vel_w, dim=-1)
+        stuck_cond = ((alt_above < 0.12)       # 12cm — tilted drone can be higher
+                     & (alt_above > -0.05)      # not below box
+                     & (xy_mag > 0.015)         # 1.5cm off center
+                     & (vel_mag < 0.15)          # nearly stationary (total velocity)
+                     & (descent_gate > 0.3))     # was trying to descend
+        self._stuck_count = (self._stuck_count + stuck_cond.long()) * stuck_cond.long()
+        retry = self._stuck_count > 40  # 0.27s stuck → pull up
+        desired_vz = torch.where(retry, torch.full_like(desired_vz, 0.4), desired_vz)
 
         # Z gain: stronger near box for faster braking
         Kp_z = 4.0 + 4.0 * torch.sigmoid((0.15 - alt_above) / 0.05)  # 4.0 far → 8.0 near
@@ -238,7 +252,8 @@ class GripperDroneEnv(DirectRLEnv):
         self.scaled_actions = self._scale_action(actions)
 
         # Hybrid analytical + RL residual for Stage 3
-        if self.cfg.stage == Stage.GRASPING:
+        # bypass_analytical: set externally to let RL control fully (e.g., end-to-end mission)
+        if self.cfg.stage == Stage.GRASPING and not getattr(self, 'bypass_analytical', False):
             base = self._compute_analytical_base()
 
             scale = self.cfg.residual_scale
@@ -737,6 +752,7 @@ class GripperDroneEnv(DirectRLEnv):
         # Stage 3: also truncate on successful 3s containment
         if self.cfg.stage == Stage.GRASPING:
             contain_success = self.contain_hold_count >= 225
+            self._dock_success = contain_success  # cache before reset clears count
             truncated = truncated | contain_success
 
         return terminated, truncated
@@ -774,6 +790,8 @@ class GripperDroneEnv(DirectRLEnv):
         self.was_grasped[env_ids] = False
         self.lift_count[env_ids] = 0
         self.contain_hold_count[env_ids] = 0
+        if hasattr(self, '_stuck_count'):
+            self._stuck_count[env_ids] = 0
         self._box_dynamic[env_ids] = False
         self._sample_objects(env_ids)
         self.object_init_z[env_ids] = self.object_pos[env_ids, 2]  # ground rest z

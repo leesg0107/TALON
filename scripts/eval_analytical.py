@@ -53,8 +53,11 @@ ep_peak_dock_count = torch.zeros(num_envs, dtype=torch.long, device=device)
 # First overlap snapshot state
 ep_fo_xy_err = torch.zeros(num_envs, device=device)
 ep_fo_vz = torch.zeros(num_envs, device=device)
+ep_fo_vxy = torch.zeros(num_envs, device=device)
 ep_fo_tilt_deg = torch.zeros(num_envs, device=device)
 ep_fo_z_offset = torch.zeros(num_envs, device=device)
+ep_fo_box_local_x = torch.zeros(num_envs, device=device)
+ep_fo_box_local_y = torch.zeros(num_envs, device=device)
 
 # Box displacement tracking
 ep_box_init_pos = torch.zeros(num_envs, 3, device=device)
@@ -89,7 +92,8 @@ results = {
     "box_displacement": [],     # box XY displacement from initial pos
     "init_xy_err": [],          # initial XY error (spawn distance)
     # First overlap snapshot
-    "fo_xy_err": [], "fo_vz": [], "fo_tilt_deg": [], "fo_z_offset": [],
+    "fo_xy_err": [], "fo_vz": [], "fo_vxy": [], "fo_tilt_deg": [], "fo_z_offset": [],
+    "fo_box_local_x": [], "fo_box_local_y": [],
 }
 
 print(f"\n=== Analytical Base Controller Eval (Failure Diagnosis) ===")
@@ -162,8 +166,11 @@ for step in range(max_eval_steps):
         ep_first_overlap_step = torch.where(ov_mask, env_step_count, ep_first_overlap_step)
         ep_fo_xy_err[ov_mask] = xy_err[ov_mask]
         ep_fo_vz[ov_mask] = vz[ov_mask]
+        ep_fo_vxy[ov_mask] = torch.norm(vel_w[ov_mask, :2], dim=-1)
         ep_fo_tilt_deg[ov_mask] = tilt_deg[ov_mask]
         ep_fo_z_offset[ov_mask] = z_offset[ov_mask]
+        ep_fo_box_local_x[ov_mask] = box_local[ov_mask, 0]
+        ep_fo_box_local_y[ov_mask] = box_local[ov_mask, 1]
 
     # Oscillation
     xy_decreasing = xy_err < prev_xy_err
@@ -219,11 +226,14 @@ for step in range(max_eval_steps):
                 results["first_overlap_step"].append(int(ep_first_overlap_step[i].item()))
                 results["fo_xy_err"].append(ep_fo_xy_err[i].item())
                 results["fo_vz"].append(ep_fo_vz[i].item())
+                results["fo_vxy"].append(ep_fo_vxy[i].item())
                 results["fo_tilt_deg"].append(ep_fo_tilt_deg[i].item())
                 results["fo_z_offset"].append(ep_fo_z_offset[i].item())
+                results["fo_box_local_x"].append(ep_fo_box_local_x[i].item())
+                results["fo_box_local_y"].append(ep_fo_box_local_y[i].item())
 
-            # Dock success
-            docked = ep_dock_count[i].item() >= 150
+            # Dock success (use env's cached flag — checked before reset clears count)
+            docked = hasattr(env, '_dock_success') and env._dock_success[i].item()
             if docked:
                 results["dock_success"] += 1
 
@@ -251,15 +261,19 @@ for step in range(max_eval_steps):
             ep_peak_dock_count[i] = 0
             ep_fo_xy_err[i] = 0.0
             ep_fo_vz[i] = 0.0
+            ep_fo_vxy[i] = 0.0
             ep_fo_tilt_deg[i] = 0.0
             ep_fo_z_offset[i] = 0.0
+            ep_fo_box_local_x[i] = 0.0
+            ep_fo_box_local_y[i] = 0.0
             ep_box_init_recorded[i] = False
             ep_init_xy_err[i] = 0.0
             ep_oscillation[i] = 0
             prev_xy_err[i] = float('inf')
             prev_xy_decreasing[i] = False
 
-        obs, _ = env_wrapped.reset()
+        # Isaac Lab auto-resets terminated/truncated envs inside step()
+        # Do NOT call env_wrapped.reset() — it resets ALL envs
 
     if step % 1000 == 0:
         print(f"  step {step:>5}  xy_err={xy_err.mean():.3f}  z_off={z_offset.mean():.3f}  "
@@ -393,12 +407,46 @@ for lo, hi, label in disp_buckets:
     n = sum(1 for d in results["box_displacement"] if lo <= d < hi)
     print(f"  {label:>8}: {n}/{n_ep} ({100*n/n_ep:.0f}%)")
 
-print(f"\n  ==================== FIRST OVERLAP SNAPSHOT ====================")
+print(f"\n  ==================== FIRST OVERLAP: DOCK vs OVERLAP_LOST ====================")
+# Build per-category first-overlap data
+# fo_ lists align with episodes that had overlap (dock + overlap_lost)
+fo_cats = [c for c in cats if c in ("dock", "overlap_lost")]
+fo_keys = ["fo_xy_err", "fo_vz", "fo_vxy", "fo_tilt_deg", "fo_z_offset", "fo_box_local_x", "fo_box_local_y"]
+
+def _fo_by_cat(key, cat):
+    return [results[key][j] for j, c in enumerate(fo_cats) if c == cat and j < len(results[key])]
+
 if results["fo_vz"]:
-    print(f"  XY err at first overlap: {_s(results['fo_xy_err'])}")
-    print(f"  v_z at first overlap:    {_s(results['fo_vz'])}")
-    print(f"  Tilt at first overlap:   {_s(results['fo_tilt_deg'], '.1f')}")
-    print(f"  z_offset at 1st overlap: {_s(results['fo_z_offset'])}")
+    print(f"\n  {'Metric':>25}  {'DOCK':>30}  {'OVERLAP_LOST':>30}")
+    print(f"  {'-'*25}  {'-'*30}  {'-'*30}")
+    labels = {
+        "fo_xy_err": "XY err (m)",
+        "fo_vz": "v_z (m/s)",
+        "fo_vxy": "v_xy (m/s)",
+        "fo_tilt_deg": "Tilt (deg)",
+        "fo_z_offset": "z_offset (m)",
+        "fo_box_local_x": "box_local_x (m)",
+        "fo_box_local_y": "box_local_y (m)",
+    }
+    for key in fo_keys:
+        dock_vals = _fo_by_cat(key, "dock")
+        lost_vals = _fo_by_cat(key, "overlap_lost")
+        fmt = ".1f" if "tilt" in key else ".3f"
+        dk = f"mean={sum(dock_vals)/len(dock_vals):{fmt}} med={sorted(dock_vals)[len(dock_vals)//2]:{fmt}}" if dock_vals else "n/a"
+        ol = f"mean={sum(lost_vals)/len(lost_vals):{fmt}} med={sorted(lost_vals)[len(lost_vals)//2]:{fmt}}" if lost_vals else "n/a"
+        print(f"  {labels.get(key, key):>25}  {dk:>30}  {ol:>30}")
+
+    # X precision analysis: how many are within strut gap (±1cm = ±0.01m)
+    dock_x = _fo_by_cat("fo_box_local_x", "dock")
+    lost_x = _fo_by_cat("fo_box_local_x", "overlap_lost")
+    if dock_x and lost_x:
+        dk_in_gap = sum(1 for x in dock_x if abs(x) < 0.01) / len(dock_x) * 100
+        ol_in_gap = sum(1 for x in lost_x if abs(x) < 0.01) / len(lost_x) * 100
+        dk_in_2cm = sum(1 for x in dock_x if abs(x) < 0.02) / len(dock_x) * 100
+        ol_in_2cm = sum(1 for x in lost_x if abs(x) < 0.02) / len(lost_x) * 100
+        print(f"\n  X precision at first overlap:")
+        print(f"    |x| < 1cm (strut gap):  DOCK {dk_in_gap:.0f}%  OVERLAP_LOST {ol_in_gap:.0f}%")
+        print(f"    |x| < 2cm:              DOCK {dk_in_2cm:.0f}%  OVERLAP_LOST {ol_in_2cm:.0f}%")
 
 print(f"\n  ==================== TIMELINE ====================")
 print(f"  {'step':>6}  {'xy_err':>8}  {'z_offset':>9}  {'v_z':>7}  {'tilt':>6}  {'overlap':>8}")
