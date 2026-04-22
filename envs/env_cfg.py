@@ -283,6 +283,7 @@ class GripperDroneEnvCfg(DirectRLEnvCfg):
     max_tilt_deg: float = 60.0
     min_altitude: float = 0.10  # lowered: gripping center at -0.08 needs body at ~0.13m
     max_distance: float = 10.0
+    truncate_on_dock_success: bool = True  # False for end-to-end eval (disable contain>=225 truncation)
 
     def __post_init__(self):
         """Set stage-dependent parameters.

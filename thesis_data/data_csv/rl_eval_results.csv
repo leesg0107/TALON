@@ -1,0 +1,19 @@
+model,environment,dock_pct,grasp_pct,crash_pct,far_pct,near_timeout_pct,xy_err_at_dock_cm,notes
+stage1_ppo_v2,stage1_basic_flight,,,15.0,,,,"Stage 1 flight: reached<0.1m=62% reached<0.3m=86% reached<0.5m=94%"
+stage3_ppo_v2,stage3_kinematic_40s,31.2,,,,,"3.4","First Stage 3, kinematic box"
+stage3_ppo_v3,stage3_kinematic_40s,38.5,,,,,"3.4","Extended training from v2"
+stage3_ppo_v3,stage3_dynamic_40s,11.4,10.0,,47.0,30.0,,"Dynamic box test: severe degradation"
+stage3_phase1,stage3_phase1_dynamic_3s,24.6,17.4,,43.0,50.0,"3.4","Phase 1: spawn above box"
+stage3_phase1_v2,stage3_phase1_dynamic_3s,24.8,19.4,,52.0,43.0,"3.2","Continued from v1"
+stage3_phase1_v3,stage3_phase1_dynamic_3s,,,,,,,FAILED: hovering exploit from target=20cm
+stage3_phase1_v4,stage3_phase1_dynamic_3s,23.3,18.6,,47.0,47.0,"3.2","TB best overlap=0.422 but eval similar to v2 - TB vs eval gap"
+stage3_phase1_v5,stage3_phase1_dynamic_3s,21.4,11.2,,55.0,36.0,,"FAILED: r_desc_speed + r_hover_dock hurt performance"
+stage3_phase2_from_v5,stage3_phase2_dynamic_8s,,,,,,,FAILED: Phase 1 model lost flight ability at 1.5m spawn
+stage3_phase2_box6cm,stage3_phase2_dynamic_8s,,,,,,,FAILED: too many simultaneous changes
+stage3_phase2_from_v4,stage3_phase2_dynamic_8s,,,,,,,FAILED: Phase 1 model cant find box at 1.5m
+stage3_phase2_baseline,stage3_phase2_dynamic_8s,,,,,,,FAILED: v3 trained 40s cant adapt to 8s
+stage3_8s_kinematic,stage3_kinematic_8s,,,,,,,In progress at time of transition to PD approach
+stage3_residual,stage3_analytical_residual,,,,,,,FAILED: RL learned hovering exploit - dock metrics crashed
+stage3_safety_v1,stage3_kinematic_8s,51.4,,,,,,"Best pure RL kinematic (1139/2215, eval-fixed)"
+stage3_safety_v1,stage3_dynamic_8s,18.5,14.2,7.7,41.9,25.9,"2.9","Best pure RL dynamic (482/2611, eval-fixed)"
+PD_controller,stage3_dynamic_12s,63.8,,0,21.1,7.9,,"PD analytical best (754/1181, eval-fixed)"

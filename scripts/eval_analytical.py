@@ -16,19 +16,23 @@ from isaaclab_rl.skrl import SkrlVecEnvWrapper
 cfg = GripperDroneEnvCfg(stage=Stage.GRASPING)
 cfg.scene.num_envs = 100
 cfg.scene.env_spacing = 5.0
-cfg.episode_length_s = 12.0
+cfg.episode_length_s = 8.0   # Match safety_v1 training condition
 cfg.lock_gripper = True
-cfg.residual_scale = 0.0  # Pure analytical — no RL residual
-# Dynamic box
-cfg.scene.grasp_object.spawn.rigid_props.kinematic_enabled = False
-cfg.scene.grasp_object.spawn.rigid_props.disable_gravity = False
+# --- MODE: "rl" for pure RL eval, "pd" for analytical-only ---
+MODE = "rl"
+# --- Box type: toggle for kinematic vs dynamic eval ---
+KINEMATIC = False  # Set False for dynamic eval
+cfg.scene.grasp_object.spawn.rigid_props.kinematic_enabled = KINEMATIC
+cfg.scene.grasp_object.spawn.rigid_props.disable_gravity = not KINEMATIC
 
 env = GripperDroneEnv(cfg=cfg)
+if MODE == "rl":
+    env.bypass_analytical = True  # Pure RL — no PD base
 env_wrapped = SkrlVecEnvWrapper(env)
 
 device = env.device
 agent = build_ppo_agent(env=env_wrapped, device=device, stage=3,
-                        checkpoint_path="logs/stage3_dynamic_v2/best_agent.pt")
+                        checkpoint_path="logs/stage3_safety_v1/best_agent.pt")
 agent.set_running_mode("eval")
 
 num_envs = env.num_envs
@@ -459,6 +463,78 @@ for i in range(0, len(xy_err_time), max(1, len(xy_err_time)//15)):
     print(f"  {s:>6}  {xy:>8.3f}  {zo:>9.3f}  {vz_v:>+7.3f}  {ti:>6.1f}  {ov:>8.4f}")
 
 print(f"{'='*70}")
+
+# ==================== Save results to thesis_data ====================
+import json
+from datetime import datetime
+
+box_type = "kinematic" if KINEMATIC else "dynamic"
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+if MODE == "rl":
+    save_subdir = "01_rl_experiments"
+    controller_name = "RL_safety_v1"
+else:
+    save_subdir = "02_pd_controller"
+    controller_name = "PD_analytical"
+save_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "thesis_data", save_subdir, "eval_raw")
+os.makedirs(save_dir, exist_ok=True)
+
+save_data = {
+    "timestamp": timestamp,
+    "controller": controller_name,
+    "box_type": box_type,
+    "episode_length_s": cfg.episode_length_s,
+    "num_envs": cfg.scene.num_envs,
+    "total_episodes": n_ep,
+    "dock_success": n_dock,
+    "dock_pct": round(100 * n_dock / n_ep, 1),
+    "overlap_lost": n_overlap_lost,
+    "no_descent": n_no_descent,
+    "far": n_far,
+    "crashed": results["crashed"],
+    "failure_breakdown": {
+        "dock": n_dock, "overlap_lost": n_overlap_lost,
+        "no_descent": n_no_descent, "far": n_far,
+    },
+    "spawn_distance_dock_pct": {},
+    "first_overlap_snapshot": {
+        "fo_xy_err": results["fo_xy_err"],
+        "fo_vz": results["fo_vz"],
+        "fo_vxy": results["fo_vxy"],
+        "fo_tilt_deg": results["fo_tilt_deg"],
+        "fo_z_offset": results["fo_z_offset"],
+        "fo_box_local_x": results["fo_box_local_x"],
+        "fo_box_local_y": results["fo_box_local_y"],
+    },
+    "per_episode": {
+        "init_xy_err": results["init_xy_err"],
+        "min_xy_err": results["min_xy_err"],
+        "max_overlap": results["max_overlap"],
+        "peak_dock_count": results["peak_dock_count"],
+        "box_displacement": results["box_displacement"],
+        "failure_category": results["failure_category"],
+    },
+}
+
+fname = f"{timestamp}_{controller_name}_{box_type}.json"
+fpath = os.path.join(save_dir, fname)
+with open(fpath, 'w') as f:
+    json.dump(save_data, f, indent=2)
+print(f"\n  Results saved: {fpath}")
+
+# Also save a compact summary txt
+txt_path = fpath.replace('.json', '.txt')
+with open(txt_path, 'w') as f:
+    f.write(f"PD Analytical Controller — {box_type}\n")
+    f.write(f"Episode: {cfg.episode_length_s}s, Envs: {cfg.scene.num_envs}\n\n")
+    f.write(f"Total episodes: {n_ep}\n")
+    f.write(f"Dock: {n_dock}/{n_ep} ({100*n_dock/n_ep:.1f}%)\n")
+    f.write(f"Overlap lost: {n_overlap_lost} ({100*n_overlap_lost/n_ep:.1f}%)\n")
+    f.write(f"No descent: {n_no_descent} ({100*n_no_descent/n_ep:.1f}%)\n")
+    f.write(f"Far: {n_far} ({100*n_far/n_ep:.1f}%)\n")
+    f.write(f"Crash: {results['crashed']} ({100*results['crashed']/n_ep:.1f}%)\n")
+print(f"  Summary saved: {txt_path}")
 
 env.close()
 simulation_app.close()

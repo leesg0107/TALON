@@ -186,19 +186,26 @@ class GripperDroneEnv(DirectRLEnv):
         max_vz = -0.15 + (-0.40 + 0.15) * speed_scale
         desired_vz = max_vz * descent_gate
 
+        # Post-dock ascent: if box grasped (contain_hold_count >= 150), climb to safe altitude
+        grasped = (self.contain_hold_count >= 150)
+        climb_target_z = 1.5  # safe altitude for Stage 4 handoff
+        drone_z = gripper_pos_w[:, 2]
+        needs_climb = grasped & (drone_z < climb_target_z)
+        desired_vz = torch.where(needs_climb, torch.full_like(desired_vz, 0.3), desired_vz)
+
         # --- Stuck detection: one strut on box edge, drone frozen ---
         # Wider thresholds: tilted drone has gripper center higher, PD micro-oscillation
         if not hasattr(self, '_stuck_count'):
             self._stuck_count = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
         vel_xy_mag = torch.norm(vel_w[:, :2], dim=-1)
         vel_mag = torch.norm(vel_w, dim=-1)
-        stuck_cond = ((alt_above < 0.12)       # 12cm — tilted drone can be higher
+        stuck_cond = ((alt_above < 0.08)       # 8cm — very close to box
                      & (alt_above > -0.05)      # not below box
-                     & (xy_mag > 0.015)         # 1.5cm off center
-                     & (vel_mag < 0.15)          # nearly stationary (total velocity)
+                     & (xy_mag > 0.03)          # 3cm off center (was 1.5cm — too sensitive)
+                     & (vel_mag < 0.10)          # nearly stationary
                      & (descent_gate > 0.3))     # was trying to descend
         self._stuck_count = (self._stuck_count + stuck_cond.long()) * stuck_cond.long()
-        retry = self._stuck_count > 40  # 0.27s stuck → pull up
+        retry = self._stuck_count > 75  # 0.5s stuck → pull up (was 40=0.27s — too quick)
         desired_vz = torch.where(retry, torch.full_like(desired_vz, 0.4), desired_vz)
 
         # Z gain: stronger near box for faster braking
@@ -252,19 +259,30 @@ class GripperDroneEnv(DirectRLEnv):
         self.scaled_actions = self._scale_action(actions)
 
         # Hybrid analytical + RL residual for Stage 3
-        # bypass_analytical: set externally to let RL control fully (e.g., end-to-end mission)
-        if self.cfg.stage == Stage.GRASPING and not getattr(self, 'bypass_analytical', False):
-            base = self._compute_analytical_base()
+        # bypass_analytical: bool (all envs) or Tensor (per-env)
+        if self.cfg.stage == Stage.GRASPING:
+            bypass = getattr(self, 'bypass_analytical', False)
 
-            scale = self.cfg.residual_scale
-            self.scaled_actions[:, :3] = base[:, :3] + self.scaled_actions[:, :3] * scale
-            self.scaled_actions[:, :3] = self.scaled_actions[:, :3].clamp(-8.0, 8.0)
-            # Angular/yaw: scale down to prevent attitude conflict with analytical
-            self.scaled_actions[:, 3:6] = self.scaled_actions[:, 3:6] * scale
-            self.scaled_actions[:, 6] = self.scaled_actions[:, 6] * scale
-            # Pure analytical: zero out all RL contributions
-            if scale == 0.0:
-                self.scaled_actions[:, 3:7] = 0.0
+            # Determine which envs use PD analytical
+            if isinstance(bypass, torch.Tensor):
+                # Per-env: bypass[i]=True means RL only, False means PD
+                pd_mask = ~bypass
+            elif bypass:
+                pd_mask = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+            else:
+                pd_mask = torch.ones(self.num_envs, dtype=torch.bool, device=self.device)
+
+            if pd_mask.any():
+                base = self._compute_analytical_base()
+                pd_ids = pd_mask.nonzero(as_tuple=False).view(-1)
+
+                scale = self.cfg.residual_scale
+                self.scaled_actions[pd_ids, :3] = base[pd_ids, :3] + self.scaled_actions[pd_ids, :3] * scale
+                self.scaled_actions[pd_ids, :3] = self.scaled_actions[pd_ids, :3].clamp(-8.0, 8.0)
+                self.scaled_actions[pd_ids, 3:6] = self.scaled_actions[pd_ids, 3:6] * scale
+                self.scaled_actions[pd_ids, 6] = self.scaled_actions[pd_ids, 6] * scale
+                if scale == 0.0:
+                    self.scaled_actions[pd_ids, 3:7] = 0.0
 
         # Gripper plate commands (always 8D action space)
         if self.cfg.lock_gripper:
@@ -536,38 +554,28 @@ class GripperDroneEnv(DirectRLEnv):
 
             full_contain = (overlap_ratio > 0.50).float()
 
-            # ========== Axis 1: Approach (reduced — analytical handles coarse) ==========
+            # ========== Axis 1: Approach (split XY/Z, Z above box only) ==========
             above_box = (gripper_pos_w[:, 2] > self.object_pos[:, 2]).float()
-            r_approach_xy = 1.0 * torch.exp(-1.5 * xy_err)
-            r_approach_z = 0.5 * torch.exp(-2.0 * z_err) * above_box
+            r_approach_xy = 3.0 * torch.exp(-1.5 * xy_err)
+            r_approach_z = 2.0 * torch.exp(-2.0 * z_err) * above_box
             r_approach = r_approach_xy + r_approach_z
 
-            # ========== Axis 2: Column alignment (no gate — always active) ==========
-            r_x_align = 3.0 * x_contain
-            r_y_align = 1.5 * y_contain
-            r_z_below = 2.0 * z_below
+            # ========== Axis 2: Column alignment (soft gate, decomposed) ==========
+            approach_gate = ((0.25 - xy_err) / 0.20).clamp(0.0, 1.0)
+            r_x_align = 1.5 * x_contain * approach_gate
+            r_y_align = 1.5 * y_contain * approach_gate
+            r_z_below = 2.0 * z_below * approach_gate
 
-            # Staged descent (analytical-aligned gate)
-            xy_aligned = torch.sigmoid((0.15 - xy_err) / 0.05)
+            # Staged descent: smooth transition (sigmoid) from "wait above" to "descend"
+            xy_aligned = torch.sigmoid((0.05 - xy_err) / 0.015)
             alt_target = self.object_pos[:, 2] + 0.25 * (1.0 - xy_aligned)
             staged_z_err = torch.abs(gripper_pos_w[:, 2] - alt_target)
             r_z = 2.0 * torch.exp(-2.0 * staged_z_err)
 
-            # ========== Axis 2.5: RL precision rewards ==========
-            # Descent precision: reward tight XY while descending (NO_DESCENT fix)
-            is_descending = (vel_w[:, 2] < -0.05).float()
-            r_descent_precision = 5.0 * torch.exp(-30.0 * xy_err) * is_descending
+            # Fine approach: bridges 5-15cm gap
+            r_fine = 5.0 * torch.exp(-10.0 * xy_err) * approach_gate * above_box
 
-            # Soft contact: reward slow descent near box surface (OVERLAP_LOST fix)
-            # is_descending gate prevents hover exploit (v5 lesson)
-            alt_above = gripper_pos_w[:, 2] - (self.object_pos[:, 2] + 0.04)
-            near_contact = torch.sigmoid((0.08 - alt_above) / 0.02)
-            r_soft_contact = 3.0 * near_contact * torch.exp(-3.0 * torch.abs(vel_w[:, 2])) * is_descending
-
-            # X precision: extra reward for tight strut-gap alignment
-            r_x_precision = 4.0 * torch.exp(-60.0 * torch.abs(box_local[:, 0]))
-
-            # ========== Axis 3: Precision dock (overlap-based, unchanged) ==========
+            # ========== Axis 3: Precision dock (overlap-based) ==========
             r_contain = 15.0 * overlap_ratio + 10.0 * full_contain
 
             is_contained = (overlap_ratio > 0.50)
@@ -580,22 +588,32 @@ class GripperDroneEnv(DirectRLEnv):
             contain_success = (self.contain_hold_count >= 225).float()
             r_success = 50.0 * contain_success
 
-            # ========== Penalties (reduced for residual) ==========
+            # ========== Penalties ==========
             action7 = self.raw_actions[:, :7]
             prev7 = self.prev_action[:, :7]
-            r_smooth = -0.1 * torch.sum((action7 - prev7) ** 2, dim=-1)
-            r_mag = -0.02 * torch.sum(action7 ** 2, dim=-1)
+            r_smooth = -0.2 * torch.sum((action7 - prev7) ** 2, dim=-1)
+            r_mag = -0.1 * torch.sum(action7 ** 2, dim=-1)
 
             # Tilt
             tilt_angle = torch.acos(R[:, 2, 2].clamp(-1.0, 1.0))
+
+            # Safety bonus: slow + level approach gets amplified dock rewards
+            vel_w_z = vel_w[:, 2]
+            descent_gate = torch.sigmoid((vel_w_z + 0.50) / 0.30)
+            tilt_gate = torch.sigmoid((0.20 - tilt_angle) / 0.10)
+            safety_bonus = descent_gate * tilt_gate
+            safety_mult = 1.0 + 2.0 * safety_bonus
+            r_contain = r_contain * safety_mult
+            r_dock_bonus = r_dock_bonus * safety_mult
+            r_hold_stable = r_hold_stable * safety_mult
+            # r_success: not amplified (one-time spike + already physically gated)
 
             r_tilt_descent = -3.0 * tilt_angle * xy_aligned
             near_dock = (overlap_ratio > 0.3).float()
             r_tilt_dock = -2.0 * tilt_angle * near_dock
 
             r_column_total = r_x_align + r_y_align + r_z_below
-            rewards = (r_approach + r_column_total + r_z
-                       + r_descent_precision + r_soft_contact + r_x_precision
+            rewards = (r_approach + r_column_total + r_z + r_fine
                        + r_contain + r_dock_bonus + r_hold_stable + r_success
                        + r_tilt_descent + r_tilt_dock
                        + r_smooth + r_mag)
@@ -603,9 +621,7 @@ class GripperDroneEnv(DirectRLEnv):
                 "r_approach": r_approach, "r_approach_xy": r_approach_xy, "r_approach_z": r_approach_z,
                 "r_column": r_column_total,
                 "r_x_align": r_x_align, "r_y_align": r_y_align, "r_z_below": r_z_below,
-                "r_z": r_z,
-                "r_descent_precision": r_descent_precision,
-                "r_soft_contact": r_soft_contact, "r_x_precision": r_x_precision,
+                "r_z": r_z, "r_fine": r_fine,
                 "r_contain": r_contain, "r_dock_bonus": r_dock_bonus,
                 "r_hold_stable": r_hold_stable, "r_success": r_success,
                 "r_tilt_descent": r_tilt_descent, "r_tilt_dock": r_tilt_dock,
@@ -613,7 +629,10 @@ class GripperDroneEnv(DirectRLEnv):
                 "xy_err": xy_err, "alt_err": z_err,
                 "gripper_xy_offset": xy_err, "pos_error": pos_err,
                 "overlap_ratio": overlap_ratio, "full_contain": full_contain,
-                "column_score": column_score, "tilt_rad": tilt_angle,
+                "column_score": column_score, "approach_gate": approach_gate,
+                "safety_bonus": safety_bonus, "safety_mult": safety_mult,
+                "descent_gate": descent_gate, "tilt_gate": tilt_gate,
+                "vel_w_z": vel_w_z, "tilt_rad": tilt_angle,
             }
 
         elif self.cfg.stage == Stage.LOADED_FLIGHT:
@@ -725,13 +744,15 @@ class GripperDroneEnv(DirectRLEnv):
             too_low = (pos_w[:, 2] < min_alt) & grasped_s4
         else:
             too_low = pos_w[:, 2] < self.cfg.min_altitude
-        too_far = torch.norm(pos_w[:, :2], dim=-1) > self.cfg.max_distance
+        local_pos = pos_w - self.scene.env_origins
+        too_far = torch.norm(local_pos[:, :2], dim=-1) > self.cfg.max_distance
         too_tilted = tilt > max_tilt
 
         # Box fell off pedestal (Stage 3 with dynamic box)
         # Only terminate if gripper hasn't docked (if docked, box may be lifted)
         dock_threshold = 100 if self.cfg.stage == Stage.LOADED_FLIGHT else 150
-        box_fell = (self.object_pos[:, 2] < 0.30) & (self.contain_hold_count < dock_threshold)
+        box_local_z = self.object_pos[:, 2] - self.scene.env_origins[:, 2]
+        box_fell = (box_local_z < 0.30) & (self.contain_hold_count < dock_threshold)
 
         # Stage 4: box must stay in gripper — terminate if lost
         # Only check after gripper has physically closed (contain_hold_count >= threshold)
@@ -750,7 +771,7 @@ class GripperDroneEnv(DirectRLEnv):
         max_steps = int(self.cfg.episode_length_s / (self.cfg.sim.dt * self.cfg.decimation))
         truncated = self.step_count >= max_steps
         # Stage 3: also truncate on successful 3s containment
-        if self.cfg.stage == Stage.GRASPING:
+        if self.cfg.stage == Stage.GRASPING and self.cfg.truncate_on_dock_success:
             contain_success = self.contain_hold_count >= 225
             self._dock_success = contain_success  # cache before reset clears count
             truncated = truncated | contain_success
@@ -802,7 +823,8 @@ class GripperDroneEnv(DirectRLEnv):
         obj_state[:, 3] = 1.0  # quaternion w
         self.grasp_object.write_root_state_to_sim(obj_state, env_ids)
 
-        # --- Spawn drone ---
+        # --- Spawn drone (env-local → world frame) ---
+        env_origins = self.scene.env_origins[env_ids]
         if self.cfg.stage == Stage.LOADED_FLIGHT:
             # Stage 4: spawn drone directly above box (no offset)
             root_pos = self.object_pos[env_ids].clone()
@@ -810,15 +832,14 @@ class GripperDroneEnv(DirectRLEnv):
         elif self.cfg.stage == Stage.GRASPING and self.cfg.grasping_phase == 1:
             # Stage 3 Phase 1: spawn drone directly above box for precise dock learning
             root_pos = self.object_pos[env_ids].clone()
-            root_pos[:, 2] = 0.85  # 30cm above box top (box z=0.54)
-            # small XY perturbation: ±5cm
+            root_pos[:, 2] = env_origins[:, 2] + 0.85  # 30cm above box top
             root_pos[:, :2] += 0.10 * (torch.rand(num_reset, 2, device=self.device) - 0.5)
         elif self.cfg.stage.value >= Stage.PRECISION_APPROACH.value:
-            default_pos = torch.tensor([0.0, 0.0, 1.5], device=self.device)
-            root_pos = default_pos + spawn_offset
+            local_pos = torch.tensor([0.0, 0.0, 3.0], device=self.device) + spawn_offset
+            root_pos = env_origins + local_pos
         else:
-            default_pos = torch.tensor([0.0, 0.0, 3.0], device=self.device)
-            root_pos = default_pos + spawn_offset
+            local_pos = torch.tensor([0.0, 0.0, 3.0], device=self.device) + spawn_offset
+            root_pos = env_origins + local_pos
 
         # Identity orientation with small random perturbation
         small_euler = 0.05 * (torch.rand(num_reset, 3, device=self.device) - 0.5)
@@ -932,15 +953,15 @@ class GripperDroneEnv(DirectRLEnv):
             z_low, z_high = self.cfg.target_z
             z = torch.empty(n, 1, device=self.device).uniform_(z_low, z_high)
 
-        self.object_pos[env_ids] = torch.cat([xy, z], dim=-1)
+        env_origins = self.scene.env_origins[env_ids]
+        self.object_pos[env_ids] = env_origins + torch.cat([xy, z], dim=-1)
 
         # Move pedestal to match box XY position (if pedestal exists)
         if hasattr(self.scene, 'rigid_objects') and 'pedestal' in self.scene.rigid_objects:
             pedestal = self.scene.rigid_objects["pedestal"]
             ped_state = torch.zeros(n, 13, device=self.device)
-            ped_state[:, 0] = xy[:, 0]  # match box X
-            ped_state[:, 1] = xy[:, 1]  # match box Y
-            ped_state[:, 2] = 0.25      # pedestal center z
+            ped_state[:, :2] = env_origins[:, :2] + xy  # match box XY in world frame
+            ped_state[:, 2] = env_origins[:, 2] + 0.25  # pedestal center z
             ped_state[:, 3] = 1.0       # quaternion w (identity)
             pedestal.write_root_state_to_sim(ped_state, env_ids)
 

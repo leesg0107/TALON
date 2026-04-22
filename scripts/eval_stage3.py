@@ -19,19 +19,21 @@ import isaaclab.sim as sim_utils
 cfg = GripperDroneEnvCfg(stage=Stage.GRASPING)
 cfg.scene.num_envs = 100
 cfg.scene.env_spacing = 5.0
-cfg.episode_length_s = 8.0   # Stage 3 baseline (8 sec, drone z=1.5 spawn)
-cfg.lock_gripper = True      # Auto-close on dock
+cfg.episode_length_s = 8.0
+cfg.lock_gripper = True
 # Dynamic box
 cfg.scene.grasp_object.spawn.rigid_props.kinematic_enabled = False
 cfg.scene.grasp_object.spawn.rigid_props.disable_gravity = False
 
+# --- SELECT MODEL ---
+CKPT = "logs/stage3_safety_v1/best_agent.pt"
 
 env = GripperDroneEnv(cfg=cfg)
 env_wrapped = SkrlVecEnvWrapper(env)
 
 device = env.device
 agent = build_ppo_agent(env=env_wrapped, device=device, stage=3,
-                        checkpoint_path="logs/stage3_dynamic_v2/best_agent.pt")
+                        checkpoint_path=CKPT)
 agent.set_running_mode("eval")
 
 # --- Capture Column Visualization ---
@@ -430,7 +432,8 @@ for step in range(max_eval_steps):
             hist_xy_err[i].zero_()
             hist_gripper_z[i].zero_()
             hist_idx[i] = 0
-        obs, _ = env_wrapped.reset()
+        # Isaac Lab auto-resets terminated/truncated envs inside step()
+        # Do NOT call env_wrapped.reset() — it resets ALL envs
 
 # --- Final Results ---
 total_ep = max(results["total_episodes"], 1)
@@ -722,6 +725,123 @@ if diag["pre_fail_vz_seq"]:
           f"{_mean_step(diag['pre_fail_xy_err_seq'],2):.3f}")
 
 print(f"{'='*60}")
+
+# === Save results to file ===
+import json
+import datetime
+
+timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+ckpt_name = os.path.basename(os.path.dirname(CKPT)) + "_" + os.path.basename(CKPT).replace(".pt", "")
+box_type = "kinematic" if cfg.scene.grasp_object.spawn.rigid_props.kinematic_enabled else "dynamic"
+save_name = f"{timestamp}_{ckpt_name}_{box_type}"
+
+# Save to thesis_data structure
+json_dir = os.path.join("thesis_data", "01_rl_experiments", "eval_raw")
+csv_dir = os.path.join("thesis_data", "data_csv")
+os.makedirs(json_dir, exist_ok=True)
+os.makedirs(csv_dir, exist_ok=True)
+
+# JSON: all numerical data
+json_data = {
+    "timestamp": timestamp,
+    "checkpoint": CKPT,
+    "box_type": box_type,
+    "episode_length_s": cfg.episode_length_s,
+    "num_envs": cfg.scene.num_envs,
+    "results": {k: v for k, v in results.items()},
+    "diag": {k: v for k, v in diag.items()},
+}
+json_path = os.path.join(json_dir, f"{save_name}.json")
+with open(json_path, "w") as f:
+    json.dump(json_data, f, indent=2, default=str)
+
+# TXT: redirect printed output
+import io, sys as _sys
+txt_path = os.path.join(json_dir, f"{save_name}.txt")
+# Re-generate summary text
+buf = io.StringIO()
+_orig = _sys.stdout
+_sys.stdout = buf
+
+print(f"Checkpoint: {CKPT}")
+print(f"Box type: {box_type}")
+print(f"Episode length: {cfg.episode_length_s}s")
+print(f"Num envs: {cfg.scene.num_envs}")
+print(f"")
+print(f"Total episodes:     {results['total_episodes']}")
+print(f"Dock success:       {results['dock_success']}/{results['total_episodes']} "
+      f"({100*results['dock_success']/max(results['total_episodes'],1):.1f}%)")
+if results['dock_success'] > 0:
+    avg_xy = sum(results['xy_err_at_dock']) / len(results['xy_err_at_dock'])
+    print(f"Avg XY err at dock: {avg_xy*100:.1f}cm")
+    print(f"Avg dock time:      {results['dock_time_sum']/results['dock_success']:.1f}s")
+print(f"Grasp success:      {results['grasp_success']}/{results['total_episodes']} "
+      f"({100*results['grasp_success']/max(results['total_episodes'],1):.1f}%)")
+print(f"Crash:              {results.get('fail_crash', 0)}")
+print(f"Far:                {results.get('fail_far', 0)}")
+print(f"Below box:          {results.get('fail_below', 0)}")
+print(f"Near timeout:       {results.get('fail_near_timeout', 0)}")
+if diag.get("dock_bounce_count"):
+    n_dock = len(diag["dock_bounce_count"])
+    zero_b = sum(1 for b in diag["dock_bounce_count"] if b == 0)
+    clean = sum(1 for b, t in zip(diag["dock_bounce_count"], diag["dock_tilt_deg"]) if b == 0 and t < 10)
+    print(f"Zero-bounce docks:  {zero_b}/{n_dock} ({100*zero_b/max(n_dock,1):.0f}%)")
+    print(f"Dynamic readiness:  {clean}/{n_dock} ({100*clean/max(n_dock,1):.0f}%)")
+if diag.get("dock_first_ov_vz"):
+    import statistics
+    print(f"Success v_z@1st_ov: mean={sum(diag['dock_first_ov_vz'])/len(diag['dock_first_ov_vz']):.3f} "
+          f"med={statistics.median(diag['dock_first_ov_vz']):.3f}")
+if diag.get("first_overlap_vz"):
+    import statistics
+    print(f"All v_z@1st_ov:     mean={sum(diag['first_overlap_vz'])/len(diag['first_overlap_vz']):.3f} "
+          f"med={statistics.median(diag['first_overlap_vz']):.3f}")
+
+_sys.stdout = _orig
+txt_content = buf.getvalue()
+
+txt_path = os.path.join(json_dir, f"{save_name}.txt")
+with open(txt_path, "w") as f:
+    f.write(txt_content)
+
+# CSV: append to rl_eval_results.csv for thesis comparison table
+csv_path = os.path.join(csv_dir, "rl_eval_results.csv")
+csv_exists = os.path.exists(csv_path)
+import csv
+with open(csv_path, "a", newline="") as f:
+    w = csv.writer(f)
+    if not csv_exists:
+        w.writerow(["timestamp", "checkpoint", "box_type", "episode_s", "total_episodes",
+                     "dock_pct", "grasp_pct", "crash_pct", "far_pct", "near_timeout_pct",
+                     "avg_xy_err_at_dock_cm", "zero_bounce_pct", "dynamic_readiness_pct",
+                     "success_vz_median", "all_vz_median"])
+    n_ep = max(results["total_episodes"], 1)
+    dock_pct = 100 * results["dock_success"] / n_ep
+    grasp_pct = 100 * results["grasp_success"] / n_ep
+    crash_pct = 100 * results.get("fail_crash", 0) / n_ep
+    far_pct = 100 * results.get("fail_far", 0) / n_ep
+    near_to_pct = 100 * results.get("fail_near_timeout", 0) / n_ep
+    avg_xy = (sum(results["xy_err_at_dock"]) / len(results["xy_err_at_dock"]) * 100
+              if results["xy_err_at_dock"] else 0)
+    zb_pct = (100 * sum(1 for b in diag.get("dock_bounce_count", []) if b == 0)
+              / max(len(diag.get("dock_bounce_count", [])), 1)
+              if diag.get("dock_bounce_count") else 0)
+    dr_pct = (100 * sum(1 for b, t in zip(diag.get("dock_bounce_count", []),
+              diag.get("dock_tilt_deg", [])) if b == 0 and t < 10)
+              / max(len(diag.get("dock_bounce_count", [])), 1)
+              if diag.get("dock_bounce_count") else 0)
+    import statistics as _st
+    s_vz = (_st.median(diag["dock_first_ov_vz"]) if diag.get("dock_first_ov_vz") else "")
+    a_vz = (_st.median(diag["first_overlap_vz"]) if diag.get("first_overlap_vz") else "")
+    w.writerow([timestamp, CKPT, box_type, cfg.episode_length_s, results["total_episodes"],
+                f"{dock_pct:.1f}", f"{grasp_pct:.1f}", f"{crash_pct:.1f}",
+                f"{far_pct:.1f}", f"{near_to_pct:.1f}",
+                f"{avg_xy:.1f}", f"{zb_pct:.0f}", f"{dr_pct:.0f}",
+                f"{s_vz:.3f}" if s_vz != "" else "", f"{a_vz:.3f}" if a_vz != "" else ""])
+
+print(f"\n  Results saved to:")
+print(f"    JSON: {json_path}")
+print(f"    TXT:  {txt_path}")
+print(f"    CSV:  {csv_path} (appended)")
 
 env.close()
 simulation_app.close()
