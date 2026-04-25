@@ -317,7 +317,7 @@ class GripperDroneEnvCfg(DirectRLEnvCfg):
 
         elif self.stage == Stage.LOADED_FLIGHT:
             self.lock_gripper = True   # Gripper: starts closed (pre-grasped)
-            self.domain_rand.payload_mass_range = (0.1, 0.3)  # for observation (matches box mass range)
+            self.domain_rand.payload_mass_range = (0.05, 0.40)  # wider range for robustness to variable grasp
             self.episode_length_s = 15.0
 
         elif self.stage == Stage.RELEASE:

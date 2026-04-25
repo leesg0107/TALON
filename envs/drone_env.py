@@ -9,6 +9,7 @@ RL policy runs at control rate (150Hz, via decimation=2).
 
 from __future__ import annotations
 
+import os
 import torch
 import math
 from typing import Any
@@ -160,59 +161,104 @@ class GripperDroneEnv(DirectRLEnv):
         # Read object position directly from physics (avoid 1-step delay)
         obj_pos = self.grasp_object.data.root_pos_w
 
-        # --- XY: PID with asymmetric gains ---
+        # --- XY: PD with consistent gains ---
         xy_err = obj_pos[:, :2] - gripper_pos_w[:, :2]
         xy_mag = torch.norm(xy_err, dim=-1)
-
-        # Dock-aware gain scheduling: soften near box to avoid bumping
         alt_above = gripper_pos_w[:, 2] - (obj_pos[:, 2] + 0.04)
-        dock_proximity = (torch.sigmoid((0.10 - alt_above) / 0.03)
-                        * torch.sigmoid((0.05 - xy_mag) / 0.02))
 
-        # Asymmetric gains (yaw≈0: world X = strut direction, tight margin 1cm)
-        Kp_x = 12.0 - 6.0 * dock_proximity
-        Kd_x = 8.0 + 4.0 * dock_proximity
-        Kp_y = 6.0 - 3.0 * dock_proximity
-        Kd_y = 5.0 + 2.5 * dock_proximity
+        # Minimal dock softening: only when VERY close (alt<4cm, xy<3cm)
+        # Prevents plate/strut collision, but doesn't kill XY correction
+        dock_proximity = (torch.sigmoid((0.04 - alt_above) / 0.015)
+                        * torch.sigmoid((0.03 - xy_mag) / 0.01))
+        Kp_x = 12.0 - 2.0 * dock_proximity
+        Kd_x = 8.0 + 1.0 * dock_proximity
+        Kp_y = 8.0 - 1.5 * dock_proximity
+        Kd_y = 6.0 + 1.0 * dock_proximity
 
         ax_w = Kp_x * xy_err[:, 0] - Kd_x * vel_w[:, 0]
         ay_w = Kp_y * xy_err[:, 1] - Kd_y * vel_w[:, 1]
 
-        # --- Z: gated descent (sharp gate — descend only when well aligned) ---
-        descent_gate = torch.sigmoid((0.10 - xy_mag) / 0.03)
+        # --- Z: Two-stage sigmoid (avoids strut-box contact) ---
+        # Stage 1 (coarse): gentle descent to 12cm standoff (above contact zone)
+        # Stage 2 (fine):   steep descent 12cm→2cm only when xy < 3cm (1cm strut margin)
+        xy_coarse = torch.sigmoid((0.10 - xy_mag) / 0.05)  # xy 5-15cm: gentle
+        xy_fine = torch.sigmoid((0.03 - xy_mag) / 0.01)    # xy 2-4cm: steep
+        standoff = 0.30 - 0.18 * xy_coarse - 0.10 * xy_fine
+        # xy far: 0.30 | xy~5cm: 0.12 (safe) | xy<2cm: 0.02 (dock)
+        target_z = obj_pos[:, 2] + standoff
 
-        # Altitude-dependent speed: fast when high, slow near box for soft contact
-        speed_scale = torch.sigmoid((alt_above - 0.15) / 0.05)
-        max_vz = -0.15 + (-0.40 + 0.15) * speed_scale
-        desired_vz = max_vz * descent_gate
+        # Position PID — integral term eliminates steady-state offset from mass mismatch
+        if not hasattr(self, '_z_integral'):
+            self._z_integral = torch.zeros(self.num_envs, device=self.device)
+        if not hasattr(self, '_recovery_timer'):
+            self._recovery_timer = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
 
-        # Post-dock ascent: if box grasped (contain_hold_count >= 150), climb to safe altitude
-        grasped = (self.contain_hold_count >= 150)
-        climb_target_z = 1.5  # safe altitude for Stage 4 handoff
-        drone_z = gripper_pos_w[:, 2]
-        needs_climb = grasped & (drone_z < climb_target_z)
-        desired_vz = torch.where(needs_climb, torch.full_like(desired_vz, 0.3), desired_vz)
+        Kp_z = 12.0
+        Ki_z = 3.0
+        Kd_z = 7.0
 
-        # --- Stuck detection: one strut on box edge, drone frozen ---
-        # Wider thresholds: tilted drone has gripper center higher, PD micro-oscillation
+        # --- Post-dock: hold at dock altitude during gripper close (150-250) ---
+        if not hasattr(self, '_dock_hold_z'):
+            self._dock_hold_z = torch.zeros(self.num_envs, device=self.device)
+        just_docked = (self.contain_hold_count >= 150) & (self.contain_hold_count < 155)
+        # Target gripper at box top (obj_z + 0.04) so plates close AROUND the box, not above it
+        self._dock_hold_z = torch.where(just_docked, obj_pos[:, 2] + 0.04, self._dock_hold_z)
+
+        # Phase timing: contain 150=hold start, 225=gripper close, 325=climb
+        gripper_closing = (self.contain_hold_count >= 150) & (self.contain_hold_count < 325)
+        grasped = (self.contain_hold_count >= 325)
+
+        # Use ACTIVE target: sigmoid during approach, hold_z during closing
+        active_target = torch.where(gripper_closing, self._dock_hold_z, target_z)
+        z_error = active_target - gripper_pos_w[:, 2]
+
+        dt_ctrl = 1.0 / 150.0
+        integrating = (self.contain_hold_count < 325) & (self._recovery_timer == 0)
+        self._z_integral = torch.where(integrating,
+                                       (self._z_integral + z_error * dt_ctrl).clamp(-1.0, 1.0),
+                                       self._z_integral * 0.95)
+        az_w = Kp_z * z_error + Ki_z * self._z_integral - Kd_z * vel_w[:, 2]
+        # Climb: separate moderate gains to avoid accel clamp bang-bang
+        # Kp=12 hits ±8 clamp → +8 then -8 jerk = 16 m/s² → shakes box loose
+        # Kp=6, Kd=5: max accel=5.5, stays in linear range, no bang-bang
+        climb_target_z = 1.5
+        needs_climb = grasped & (gripper_pos_w[:, 2] < climb_target_z)
+        Kp_climb = 6.0
+        Kd_climb = 5.0
+        climb_az = Kp_climb * (climb_target_z - gripper_pos_w[:, 2]) - Kd_climb * vel_w[:, 2]
+        az_w = torch.where(needs_climb, climb_az, az_w)
+
+        # --- Stuck recovery: sustained 150-step phase ---
         if not hasattr(self, '_stuck_count'):
             self._stuck_count = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
-        vel_xy_mag = torch.norm(vel_w[:, :2], dim=-1)
+
         vel_mag = torch.norm(vel_w, dim=-1)
-        stuck_cond = ((alt_above < 0.08)       # 8cm — very close to box
-                     & (alt_above > -0.05)      # not below box
-                     & (xy_mag > 0.03)          # 3cm off center (was 1.5cm — too sensitive)
-                     & (vel_mag < 0.10)          # nearly stationary
-                     & (descent_gate > 0.3))     # was trying to descend
+        not_docking = (self.contain_hold_count < 10)
+
+        # Detect: physically stuck on box edge (low alt, off-center, frozen)
+        stuck_cond = ((alt_above < 0.06) & (alt_above > -0.05)
+                     & (xy_mag > 0.04) & (vel_mag < 0.12) & not_docking)
         self._stuck_count = (self._stuck_count + stuck_cond.long()) * stuck_cond.long()
-        retry = self._stuck_count > 75  # 0.5s stuck → pull up (was 40=0.27s — too quick)
-        desired_vz = torch.where(retry, torch.full_like(desired_vz, 0.4), desired_vz)
 
-        # Z gain: stronger near box for faster braking
-        Kp_z = 4.0 + 4.0 * torch.sigmoid((0.15 - alt_above) / 0.05)  # 4.0 far → 8.0 near
-        az_w = Kp_z * (desired_vz - vel_w[:, 2])
+        # Start 150-step (1s) recovery when truly stuck
+        trigger = (self._stuck_count > 100) & (self._recovery_timer == 0)
+        self._recovery_timer = torch.where(trigger,
+                                           torch.full_like(self._recovery_timer, 150),
+                                           self._recovery_timer)
+        in_recovery = (self._recovery_timer > 0) & ~grasped
+        self._recovery_timer = torch.where(in_recovery,
+                                           self._recovery_timer - 1,
+                                           self._recovery_timer)
+        self._stuck_count[in_recovery] = 0
 
-        # Safety: strong upward push if gripper drops below box top
+        # Recovery: pull up to 30cm + XY boost (use same Kp_z for consistency)
+        recovery_z = obj_pos[:, 2] + 0.30
+        az_w = torch.where(in_recovery, Kp_z * (recovery_z - gripper_pos_w[:, 2]) - Kd_z * vel_w[:, 2], az_w)
+        recovery_f = in_recovery.float()
+        ax_w = ax_w + recovery_f * (4.0 * xy_err[:, 0] - 2.0 * vel_w[:, 0])
+        ay_w = ay_w + recovery_f * (4.0 * xy_err[:, 1] - 2.0 * vel_w[:, 1])
+
+        # Safety: push up if gripper below box
         az_w = az_w + 3.0 * (alt_above < -0.02).float()
 
         # World → body frame
@@ -289,7 +335,7 @@ class GripperDroneEnv(DirectRLEnv):
             # Default: gripper fully open
             gripper_cmd = torch.full((self.num_envs,), 0.873, device=self.device)
             # Auto-close on sustained dock (contain_hold_count tracks cumulative containment)
-            dock_threshold = 100 if self.cfg.stage == Stage.LOADED_FLIGHT else 150
+            dock_threshold = 100 if self.cfg.stage == Stage.LOADED_FLIGHT else 225
             docked_mask = self.contain_hold_count >= dock_threshold
             gripper_cmd[docked_mask] = -0.087  # fully closed
         else:
@@ -813,6 +859,12 @@ class GripperDroneEnv(DirectRLEnv):
         self.contain_hold_count[env_ids] = 0
         if hasattr(self, '_stuck_count'):
             self._stuck_count[env_ids] = 0
+        if hasattr(self, '_recovery_timer'):
+            self._recovery_timer[env_ids] = 0
+        if hasattr(self, '_z_integral'):
+            self._z_integral[env_ids] = 0.0
+        if hasattr(self, '_dock_hold_z'):
+            self._dock_hold_z[env_ids] = 0.0
         self._box_dynamic[env_ids] = False
         self._sample_objects(env_ids)
         self.object_init_z[env_ids] = self.object_pos[env_ids, 2]  # ground rest z
@@ -870,7 +922,7 @@ class GripperDroneEnv(DirectRLEnv):
 
         # --- Reset controller ---
         self.attitude_ctrl.reset(env_ids)
-        self.attitude_ctrl.mass[env_ids] = self.attitude_ctrl.base_mass  # reset to drone-only mass
+        self.attitude_ctrl.mass[env_ids] = self.attitude_ctrl.base_mass * self.mass_scale[env_ids]
 
         # --- Reset task state ---
         self.step_count[env_ids] = 0
@@ -893,23 +945,75 @@ class GripperDroneEnv(DirectRLEnv):
             self._setup_grasped_state(env_ids)
 
     def _setup_grasped_state(self, env_ids: torch.Tensor):
-        """Set up pre-grasped state for Stage 4. No sim stepping.
+        """Set up pre-grasped state for Stage 4.
 
-        Plates are set to closed position via write_joint_state AND joint target.
-        contain_hold_count is set high so _pre_physics_step maintains closed target.
-        On the very first sim step, the actuator exerts holding force at the closed position.
+        If pre-simulated grasp states exist (data/grasp_states.pt), samples from
+        physically-realistic dock+climb outcomes. Otherwise falls back to
+        idealized placement with random offset.
         """
-        # Set contain_hold_count so gripper stays closed in _pre_physics_step
+        n = len(env_ids)
+        env_origins = self.scene.env_origins[env_ids]
+
+        # Try loading pre-simulated states (generated by generate_grasp_states.py)
+        if not hasattr(self, '_grasp_states'):
+            grasp_path = "data/grasp_states.pt"
+            if os.path.exists(grasp_path):
+                self._grasp_states = torch.load(grasp_path, map_location=self.device)
+                n_loaded = self._grasp_states['n_states'].item()
+                print(f"[Stage4] Loaded {n_loaded} pre-simulated grasp states from {grasp_path}")
+            else:
+                self._grasp_states = None
+                print(f"[Stage4] No grasp states at {grasp_path}, using idealized placement")
+
+        if self._grasp_states is not None:
+            # Sample random indices from pre-simulated states
+            gs = self._grasp_states
+            n_available = gs['n_states'].item()
+            idx = torch.randint(0, n_available, (n,), device=self.device)
+
+            # Restore drone state
+            drone_pos = env_origins + gs['drone_pos_local'][idx].to(self.device)
+            drone_quat = gs['drone_quat'][idx].to(self.device)
+            drone_vel = gs['drone_vel'][idx].to(self.device)
+            root_state = torch.cat([drone_pos, drone_quat, drone_vel], dim=-1)
+            self.robot.write_root_state_to_sim(root_state, env_ids)
+
+            # Restore box state
+            box_pos = env_origins + gs['box_pos_local'][idx].to(self.device)
+            box_quat = gs['box_quat'][idx].to(self.device)
+            box_state = torch.zeros(n, 13, device=self.device)
+            box_state[:, :3] = box_pos
+            box_state[:, 3:7] = box_quat
+            self.grasp_object.write_root_state_to_sim(box_state, env_ids)
+            self.object_pos[env_ids] = box_pos
+
+            # Restore joint state (gripper closed from actual dock)
+            joint_pos = gs['joint_pos'][idx].to(self.device)
+            joint_vel = torch.zeros_like(joint_pos)
+            self.robot.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=env_ids)
+
+            # Restore domain randomization parameters
+            self.mass_scale[env_ids] = gs['mass_scale'][idx].to(self.device).squeeze(-1)
+            self.motor_kf_scale[env_ids] = gs['motor_kf_scale'][idx].to(self.device).squeeze(-1)
+
+        else:
+            # Fallback: idealized placement with random offset
+            grasp_offset = torch.zeros(n, 3, device=self.device)
+            grasp_offset[:, :2] = 0.04 * (torch.rand(n, 2, device=self.device) - 0.5)
+            obj_state = torch.zeros(n, 13, device=self.device)
+            obj_state[:, :3] = self.object_pos[env_ids] + grasp_offset
+            obj_state[:, 3] = 1.0
+            self.grasp_object.write_root_state_to_sim(obj_state, env_ids)
+            self.object_pos[env_ids] = obj_state[:, :3]
+
+        # Common: set grasp flags and controller state
         self.contain_hold_count[env_ids] = 200
         self.is_grasped[env_ids] = True
         self.was_grasped[env_ids] = True
 
-        # Explicitly set joint position target to closed BEFORE first sim step
-        # This ensures actuator exerts holding force from step 1
-        closed_target = torch.full((len(env_ids), 2), -0.087, device=self.device)
+        closed_target = torch.full((n, 2), -0.087, device=self.device)
         self.robot.set_joint_position_target(closed_target, joint_ids=self.plate_joint_ids, env_ids=env_ids)
 
-        # Update controller mass with payload
         drone_mass = self.attitude_ctrl.base_mass * self.mass_scale[env_ids]
         self.attitude_ctrl.mass[env_ids] = drone_mass + self.payload_mass[env_ids]
 

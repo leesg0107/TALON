@@ -231,8 +231,8 @@ class GripperWaypointEnv(DirectRLEnv):
         # Tilt
         tilt_angle = torch.acos(R[:, 2, 2].clamp(-1.0, 1.0))
         if self.mode == "loaded":
-            tilt_excess = (tilt_angle - 0.45).clamp(min=0)  # ~26° threshold (not 20°)
-            r_tilt = -3.0 * tilt_excess
+            tilt_excess = (tilt_angle - 0.35).clamp(min=0)  # ~20° threshold (tighter for loaded)
+            r_tilt = -4.0 * tilt_excess
         else:
             tilt_excess = (tilt_angle - 0.52).clamp(min=0)
             r_tilt = -3.0 * tilt_excess
@@ -366,47 +366,80 @@ class GripperWaypointEnv(DirectRLEnv):
 
         if self.mode == "loaded":
             # ============================================================
-            # Stage 4: Spawn on pedestal with box already in gripper
-            # No dock phase — pure loaded flight from the start
+            # Stage 4: Spawn with box in gripper
+            # Uses pre-simulated grasp states if available, otherwise idealized
             # ============================================================
+            import os
+            if not hasattr(self, '_grasp_states'):
+                grasp_path = "data/grasp_states.pt"
+                if os.path.exists(grasp_path):
+                    self._grasp_states = torch.load(grasp_path, map_location=self.device)
+                    print(f"[Stage4] Loaded {self._grasp_states['n_states'].item()} grasp states")
+                else:
+                    self._grasp_states = None
+
             self.payload_mass[env_ids] = torch.empty(num_reset, device=self.device).uniform_(0.15, 0.25)
 
-            # Mass = drone + payload (box is already grasped)
             drone_mass = self.attitude_ctrl.base_mass * self.mass_scale[env_ids]
             self.attitude_ctrl.mass[env_ids] = drone_mass + self.payload_mass[env_ids]
 
-            # Drone position: above pedestal (z=0.85) with small noise
-            root_pos = env_origins.clone()
-            root_pos[:, 2] += 0.85
-            root_pos[:, :2] += 0.10 * (torch.rand(num_reset, 2, device=self.device) - 0.5)
+            if self._grasp_states is not None:
+                # === Use pre-simulated physically-realistic grasp states ===
+                gs = self._grasp_states
+                n_available = gs['n_states'].item()
+                idx = torch.randint(0, n_available, (num_reset,), device=self.device)
 
-            # Small random orientation
-            small_euler = 0.05 * (torch.rand(num_reset, 3, device=self.device) - 0.5)
-            root_quat = _euler_to_quat(small_euler)
+                root_pos = env_origins + gs['drone_pos_local'][idx].to(self.device)
+                root_quat = gs['drone_quat'][idx].to(self.device)
+                root_vel = gs['drone_vel'][idx].to(self.device)
 
-            # Spawn drone
-            root_state = torch.zeros(num_reset, 13, device=self.device)
-            root_state[:, :3] = root_pos
-            root_state[:, 3:7] = root_quat
-            self.robot.write_root_state_to_sim(root_state, env_ids)
+                root_state = torch.zeros(num_reset, 13, device=self.device)
+                root_state[:, :3] = root_pos
+                root_state[:, 3:7] = root_quat
+                root_state[:, 7:] = root_vel
+                self.robot.write_root_state_to_sim(root_state, env_ids)
 
-            # Gripper: closed (box attached)
-            joint_pos = self.robot.data.joint_pos[env_ids].clone()
-            joint_vel = torch.zeros_like(joint_pos)
-            for jid in self.plate_joint_ids:
-                joint_pos[:, jid] = -0.087  # closed
-            self.robot.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=env_ids)
+                joint_pos = gs['joint_pos'][idx].to(self.device)
+                joint_vel = torch.zeros_like(joint_pos)
+                self.robot.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=env_ids)
 
-            # Box: at gripper position (attached to drone)
-            R = quat_to_rot_matrix(root_quat)
-            gripper_offset = torch.tensor([0.0, 0.0, -0.08], device=self.device)
-            box_pos = root_pos + torch.bmm(
-                R, gripper_offset.expand(num_reset, 3).unsqueeze(-1)
-            ).squeeze(-1)
-            obj_state = torch.zeros(num_reset, 13, device=self.device)
-            obj_state[:, :3] = box_pos
-            obj_state[:, 3:7] = root_quat  # same orientation as drone
-            self.grasp_object.write_root_state_to_sim(obj_state, env_ids)
+                box_pos = env_origins + gs['box_pos_local'][idx].to(self.device)
+                box_quat = gs['box_quat'][idx].to(self.device)
+                obj_state = torch.zeros(num_reset, 13, device=self.device)
+                obj_state[:, :3] = box_pos
+                obj_state[:, 3:7] = box_quat
+                self.grasp_object.write_root_state_to_sim(obj_state, env_ids)
+            else:
+                # === Fallback: idealized placement with offset ===
+                root_pos = env_origins.clone()
+                root_pos[:, 2] += 0.85
+                root_pos[:, :2] += 0.10 * (torch.rand(num_reset, 2, device=self.device) - 0.5)
+
+                small_euler = 0.05 * (torch.rand(num_reset, 3, device=self.device) - 0.5)
+                root_quat = _euler_to_quat(small_euler)
+
+                root_state = torch.zeros(num_reset, 13, device=self.device)
+                root_state[:, :3] = root_pos
+                root_state[:, 3:7] = root_quat
+                self.robot.write_root_state_to_sim(root_state, env_ids)
+
+                joint_pos = self.robot.data.joint_pos[env_ids].clone()
+                joint_vel = torch.zeros_like(joint_pos)
+                for jid in self.plate_joint_ids:
+                    joint_pos[:, jid] = -0.087
+                self.robot.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=env_ids)
+
+                R = quat_to_rot_matrix(root_quat)
+                gripper_offset = torch.tensor([0.0, 0.0, -0.08], device=self.device)
+                gripper_offset = gripper_offset.expand(num_reset, 3).clone()
+                gripper_offset[:, :2] += 0.02 * (2 * torch.rand(num_reset, 2, device=self.device) - 1)
+                box_pos = root_pos + torch.bmm(R, gripper_offset.unsqueeze(-1)).squeeze(-1)
+                box_euler = small_euler + 0.052 * (2 * torch.rand(num_reset, 3, device=self.device) - 1)
+                box_quat = _euler_to_quat(box_euler)
+                obj_state = torch.zeros(num_reset, 13, device=self.device)
+                obj_state[:, :3] = box_pos
+                obj_state[:, 3:7] = box_quat
+                self.grasp_object.write_root_state_to_sim(obj_state, env_ids)
 
             # Generate trajectory of 4 sequential WPs
             self._generate_trajectory(env_ids)

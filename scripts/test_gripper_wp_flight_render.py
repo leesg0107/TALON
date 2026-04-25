@@ -27,7 +27,7 @@ env_wrapped = SkrlVecEnvWrapper(env)
 device = env.device
 
 agent = build_waypoint_agent(env=env_wrapped, device=device, mode="flight",
-                             checkpoint_path="logs/gripper_wp_flight_v2/best_agent.pt")
+                             checkpoint_path="logs/gripper_wp_flight_v6/best_agent.pt")
 agent.set_running_mode("eval")
 
 goal_marker_cfg = VisualizationMarkersCfg(

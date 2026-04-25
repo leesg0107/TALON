@@ -1,62 +1,48 @@
-# Thesis Data: Dual-Purpose Landing Gear Drone Grasping
+# Thesis Data: Autonomous Aerial Pick-and-Place with Dual-Purpose Landing Gear
 
-Isaac Lab 시뮬레이션 환경에서 그리퍼-드론의 물체 파지 실험 데이터 및 분석.
-논문 작성을 위한 데이터/분석 아카이브.
+## Contribution
 
-## 폴더 구조
+**Landing gear를 gripper로 겸용**하는 드론이 물체를 자율적으로 파지하고 운반하는 end-to-end 파이프라인.
+RL waypoint navigation + PID precision docking의 **task decomposition** 접근.
 
 ```
-thesis_data/
-├── README.md                          ← 이 파일
-├── 01_rl_experiments/
-│   ├── analysis.md                    ← RL 실험 전체 분석 (Stage 3)
-│   └── training_log_original.md       ← 원본 학습 로그 (시간순, 모든 시도)
-├── 02_pd_controller/
-│   └── analysis.md                    ← PD 컨트롤러 설계/튜닝/결과 분석
-├── 03_rl_vs_pd_comparison/
-│   └── analysis.md                    ← RL vs PD 비교 분석 + 왜 PD가 더 나았는가
-├── 04_hybrid_attempts/
-│   └── analysis.md                    ← PD+RL residual, INDI, PID 시도 및 실패 분석
-└── data_csv/
-    ├── rl_training_summary.csv        ← TB 메트릭 (8 experiments)
-    ├── rl_eval_results.csv            ← RL eval 결과 (14 entries)
-    ├── pd_tuning_progression.csv      ← PD 게인 튜닝 전 과정 (12 steps)
-    └── dock_vs_overlap_lost_at_first_overlap.csv  ← 성공/실패 접촉 비교
+[Approach]        [Dock]           [Grasp]      [Transport]      [Delivery]
+RL waypoint  →  PID analytical  →  Auto-close  →  RL loaded  →  RL waypoint
+(Stage 1)        (Stage 3)                        (Stage 4)
 ```
 
-## 핵심 결과 요약
+### Key Results
 
 | 접근법 | Dock% | Crash% | 학습 시간 |
 |--------|-------|--------|----------|
-| Pure RL best (Phase1 v2) | 24.8% | ~3% | ~3h |
-| PD initial (no tuning) | 24.7% | 0% | 0 |
-| PD optimized | **63.8%** | 0% | 0 |
-| PD + RL residual | <6% | 0% | 1h (실패) |
+| RL best (PPO, dynamic) | 24.8% | ~3% | ~3h |
+| PID initial (no tuning) | 24.7% | 0% | 0 |
+| PID optimized | **63.8%** | **0%** | 0 |
 
-## 데이터 활용 가이드
+### Environment
+Isaac Lab (Isaac Sim 4.5) · gripper-drone 1.080 kg · 8cm cube 0.2 kg · PPO (SKRL) 4096 envs · 150/300 Hz
 
-### 그래프 제작용 CSV
-- `pd_tuning_progression.csv`: PD 성능 향상 곡선 (12 데이터 포인트)
-- `rl_eval_results.csv`: RL 실험별 성능 비교 막대 그래프
-- `dock_vs_overlap_lost_at_first_overlap.csv`: 성공/실패 접촉 조건 비교
+---
 
-### 분석 문서 → 논문 섹션 매핑
-- `01_rl_experiments/analysis.md` → Related Work / Methodology / RL Results
-- `02_pd_controller/analysis.md` → Proposed Method / Controller Design
-- `03_rl_vs_pd_comparison/analysis.md` → Discussion / Comparison
-- `04_hybrid_attempts/analysis.md` → Discussion / Hybrid Approaches
+## Documents
 
-## 실험 환경
-- Simulator: Isaac Lab (Isaac Sim 4.5)
-- Robot: Custom gripper-drone (URDF, 1.08kg)
-- Box: 8cm cube, 0.2kg, dynamic (gravity ON)
-- Pedestal: 30×30×50cm, kinematic
-- RL: PPO (SKRL), 4096 parallel envs
-- Control rate: 150Hz (policy), 300Hz (physics)
-- Domain randomization: mass ±10%, motor kf ±15%, wind 0.5N, pos noise 2cm
+```
+thesis_data/
+├── README.md                    ← 이 파일
+├── 01_system_and_controller.md  ← 시스템 구조 + PID 도킹 제어기 수학
+├── 02_rl_training.md            ← Stage 1/4 RL (보상 수식, PPO, 네트워크)
+├── 03_docking_experiments.md    ← RL 실험 + RL vs Analytical 비교 + Hybrid 시도
+├── 04_end_to_end_pipeline.md    ← 미션 phase state machine
+├── raw/
+│   └── training_log_original.md ← 원본 학습 로그 (시간순 raw)
+└── data_csv/                    ← 그래프/테이블용 CSV + JSON
+```
 
-## 날짜
-- RL 실험: 2026-04-10 ~ 2026-04-11
-- PD 개발: 2026-04-14
-- Hybrid 시도: 2026-04-14
-- 문서 정리: 2026-04-15
+### 논문 섹션 매핑
+
+| 문서 | 논문 섹션 |
+|------|----------|
+| `01_system_and_controller` | System Design · Methodology · Controller Design |
+| `02_rl_training` | RL Methodology · Reward Design · Training Setup |
+| `03_docking_experiments` | Experiments · Results · Discussion |
+| `04_end_to_end_pipeline` | System Integration · Mission Design |

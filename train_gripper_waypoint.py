@@ -73,7 +73,7 @@ def main():
     )
 
     # Reset log_std if loading checkpoint (allow re-exploration for new reward)
-    if args.checkpoint and args.reset_std:
+    if (args.checkpoint or args.warm_start) and args.reset_std:
         with torch.no_grad():
             agent.models["policy"].log_std.fill_(0.0)  # std=1.0
         print(f"  Reset log_std to 0.0 (std=1.0) for re-exploration")
