@@ -1,7 +1,7 @@
-# TALON — Controller Design & Reward Structure
+# TALON — Technical Documentation
  
-> Technical documentation for the TALON autonomous aerial grasping system.  
-> Covers reinforcement learning reward design, analytical docking controller, and end-to-end pipeline integration.
+> Complete technical documentation for the TALON autonomous aerial grasping system.  
+> Covers system architecture, RL reward design, analytical docking controller, end-to-end pipeline, and domain randomization.
  
 ---
  

@@ -175,9 +175,9 @@ python scripts/eval_pd_dock.py
 
 ## Technical Documentation
 
-For detailed reward structures, analytical controller design, and domain randomization:
+For detailed system architecture, reward design, analytical controller, and domain randomization:
 
-→ **[docs/reward_structure.md](docs/reward_structure.md)**
+→ **[docs/technical_doc.md](docs/technical_doc.md)**
 
 ---
 
@@ -206,7 +206,7 @@ soltronev3/
 │   └── grasp_states.pt            # ~5000 physical grasp states
 ├── assets/                        # URDF, meshes, demo video
 └── docs/
-    └── reward_structure.md        # Detailed technical documentation
+    └── technical_doc.md           # Detailed technical documentation
 ```
 
 ## Key Specs
