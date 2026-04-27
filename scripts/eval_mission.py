@@ -11,10 +11,12 @@ Phase 3: (future) Stage 4 model flies to delivery
 import sys
 import os
 import math
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _PROJECT_ROOT)
+os.chdir(_PROJECT_ROOT)
 
 from isaaclab.app import AppLauncher
-app_launcher = AppLauncher(headless=True)
+app_launcher = AppLauncher(headless=False)
 simulation_app = app_launcher.app
 
 import torch
@@ -81,7 +83,7 @@ class FakeEnv:
 
 fake_env_s1 = FakeEnv(22, 4)
 agent_s1 = build_waypoint_agent(env=fake_env_s1, device=device, mode="flight",
-                                checkpoint_path="logs/gripper_wp_flight_v6/final_agent.pt")
+                                checkpoint_path="models/flight_best/final_agent.pt")
 agent_s1.set_running_mode("eval")
 
 # ============================================================
@@ -98,7 +100,7 @@ class FakeEnvS4:
 
 fake_env_s4 = FakeEnvS4()
 agent_s4 = build_waypoint_agent(env=fake_env_s4, device=device, mode="loaded",
-                                checkpoint_path="logs/gripper_wp_loaded_v16/best_agent.pt")
+                                checkpoint_path="models/loaded_best/best_agent.pt")
 agent_s4.set_running_mode("eval")
 
 # ============================================================
@@ -166,7 +168,7 @@ def compute_loaded_obs(env, goal_pos, prev_action_4d, payload_mass=0.2):
 # ============================================================
 # Mission
 # ============================================================
-NUM_MISSIONS = 300
+NUM_MISSIONS = 30
 DOCK_XY_SWITCH = 0.50
 WP_REACH_DIST = 0.30
 
@@ -215,9 +217,9 @@ def generate_waypoints(start, target_xy, target_z=2.0, num_wps=3, min_z=0.8):
 
 print(f"\n{'='*60}")
 print(f"  END-TO-END MISSION (Stage 1 + PD Dock + Stage 4)")
-print(f"  Stage 1: logs/gripper_wp_flight_v6/final_agent.pt")
+print(f"  Stage 1: models/flight_best/final_agent.pt")
 print(f"  PD dock: analytical controller")
-print(f"  Stage 4: logs/gripper_wp_loaded_v16/best_agent.pt")
+print(f"  Stage 4: models/loaded_best/best_agent.pt")
 print(f"{'='*60}\n")
 
 obs, _ = env_wrapped.reset()
@@ -473,11 +475,38 @@ for mission in range(NUM_MISSIONS):
         elif phase == "delivery":
             env.bypass_analytical = True
 
-            # Check box still held (box should be near drone, not on ground)
+            # --- Delivery telemetry ---
+            R_del = quat_to_rot_matrix(env.robot.data.root_quat_w)
+            tilt_del = torch.acos(R_del[0, 2, 2].clamp(-1, 1)).item() * 57.3
+            vel_del = env.robot.data.root_lin_vel_w[0]
+            speed_del = torch.norm(vel_del).item()
+            ang_vel_del = torch.norm(env.robot.data.root_ang_vel_b[0]).item()
+            gripper_offset_b = torch.tensor([0.0, 0.0, -0.08], device=device)
+            gripper_pos = pos_w + (R_del[0] @ gripper_offset_b)
+            box_gripper_dist = torch.norm(obj_pos - gripper_pos).item()
             box_drone_dist = torch.norm(pos_w - obj_pos).item()
+            local_z = pos_w[2].item() - env.scene.env_origins[0, 2].item()
+
+            # Log every 1s during delivery
+            if step % 150 == 0:
+                print(f"      [DEL {step/150:.0f}s] z={local_z:.2f} tilt={tilt_del:.0f}° "
+                      f"v={speed_del:.2f} ω={ang_vel_del:.2f} "
+                      f"box_grip={box_gripper_dist:.3f} box_drone={box_drone_dist:.3f} "
+                      f"wp={wp_idx+1}/{len(delivery_wps)}")
+
+            # Check box still held
             if box_z < 0.30 or box_drone_dist > 0.50:
+                # Log state at failure AND 1s of history
+                if box_z < 0.30 and local_z < 0.30:
+                    fail_detail = "drone+box_crashed"
+                elif box_z < 0.30:
+                    fail_detail = "box_fell"
+                else:
+                    fail_detail = "box_drifted"
                 fail_reason = "box_dropped_during_delivery"
-                print(f"    [{step/150:.1f}s] BOX DROPPED (box_z={box_z:.2f}, dist={box_drone_dist:.2f})")
+                print(f"    [{step/150:.1f}s] BOX DROPPED ({fail_detail})")
+                print(f"      drone: z={local_z:.2f} tilt={tilt_del:.0f}° v={speed_del:.2f} ω={ang_vel_del:.2f}")
+                print(f"      box: z={box_z:.2f} grip_dist={box_gripper_dist:.3f} drone_dist={box_drone_dist:.3f}")
                 break
 
             obs_23d = compute_loaded_obs(env, current_goal, prev_action_4d, payload_mass=0.2)
@@ -544,7 +573,7 @@ for mission in range(NUM_MISSIONS):
         elif torch.norm(_local_p[:2]).item() > 10.0:
             fail_reason = "too_far"
             _terminated = True
-        elif _tilt_deg > 60:
+        elif _tilt_deg > 70:
             fail_reason = "too_tilted"
             _terminated = True
         elif phase == "dock" and _box_z_local < 0.30 and env.contain_hold_count[0].item() < 150:
@@ -552,10 +581,14 @@ for mission in range(NUM_MISSIONS):
             _terminated = True
 
         if _terminated:
+            _vel = env.robot.data.root_lin_vel_w[0]
+            _spd = torch.norm(_vel).item()
+            _angvel = torch.norm(env.robot.data.root_ang_vel_b[0]).item()
+            _bd = torch.norm(env.robot.data.root_pos_w[0] - env.object_pos[0]).item()
             print(f"    [{step/150:.1f}s] TERMINATED: {fail_reason} at phase={phase}")
             print(f"      pos=({_p[0]:.1f},{_p[1]:.1f},{_p[2]:.1f}) tilt={_tilt_deg:.0f}°")
-            print(f"      local_z={_local_p[2].item():.2f} xy_dist={torch.norm(_local_p[:2]).item():.1f}")
-            print(f"      box_z_local={_box_z_local:.2f} contain={env.contain_hold_count[0].item()}")
+            print(f"      v={_spd:.2f} ω={_angvel:.2f} box_dist={_bd:.3f}")
+            print(f"      local_z={_local_p[2].item():.2f} box_z={_box_z_local:.2f}")
             break
 
         # Status

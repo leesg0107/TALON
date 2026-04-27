@@ -177,33 +177,40 @@ For detailed system architecture, reward functions, analytical controller design
 
 ```
 TALON/
-├── train_gripper_waypoint.py       # RL training (flight & loaded modes)
+├── train_gripper_waypoint.py        # RL training script (flight & loaded modes)
+│
 ├── envs/
-│   ├── drone_env.py                # Core environment: physics simulation,
-│   │                               #   analytical docking controller, reward
-│   │                               #   computation, gripper logic (~900 lines)
-│   ├── gripper_waypoint_env.py     # Wrapper for RL waypoint training:
-│   │                               #   22D/23D obs, 4D action, trajectory gen
-│   └── env_cfg.py                  # All configuration: drone params, DR,
-│                                   #   stage settings, scene layout
-├── agents/
-│   └── waypoint_ppo_cfg.py         # PPO config: 2×128 MLP, hyperparameters
+│   ├── drone_env.py                 # Core environment: physics, analytical
+│   │                                #   docking controller, gripper logic
+│   ├── gripper_waypoint_env.py      # RL training wrapper: 22D/23D obs,
+│   │                                #   4D action, waypoint trajectory gen
+│   └── env_cfg.py                   # Configuration: drone params, DR, scenes
+│
 ├── controllers/
-│   └── drone_ctrl.py               # Inner-loop: SO(3) attitude PD controller,
-│                                   #   motor model, mixer matrix (300 Hz)
+│   └── drone_ctrl.py                # Inner loop: SO(3) attitude controller,
+│                                    #   motor model, mixer matrix (300 Hz)
+├── agents/
+│   └── waypoint_ppo_cfg.py          # PPO agent: 2×128 MLP, hyperparameters
+│
 ├── rewards/
-│   └── reward_fn.py                # Reward functions for all 5 stages
+│   └── reward_fn.py                 # Reward functions for all stages
+│
 ├── scripts/
-│   ├── eval_mission_headless.py    # End-to-end eval (128 parallel envs)
-│   ├── eval_mission.py             # End-to-end eval (single env, rendering)
-│   ├── eval_gripper_wp.py          # Standalone RL model eval
-│   ├── eval_pd_dock.py             # Standalone analytical dock eval
-│   └── generate_grasp_states.py    # Collect physical grasp states for Stage 4
+│   ├── eval_mission_headless.py     # End-to-end eval (128 parallel envs)
+│   ├── eval_mission.py              # End-to-end eval (single env, rendering)
+│   ├── eval_gripper_wp.py           # Standalone RL model eval
+│   ├── eval_pd_dock.py              # Standalone analytical dock eval
+│   └── generate_grasp_states.py     # Generate physical grasp states for Stage 4
+│
 ├── data/
-│   └── grasp_states.pt             # ~5,000 pre-simulated grasp states
-├── docs/
-│   └── technical_doc.md            # Full technical documentation
-└── assets/                         # URDF, demo video
+│   └── grasp_states.pt              # ~5,000 pre-simulated grasp states
+│
+├── assets/
+│   ├── gripper_drone_v5.urdf        # Quadrotor + dual-purpose landing gear
+│   └── end-to-end.mp4              # Demo video
+│
+└── docs/
+    └── technical_doc.md             # Full technical documentation
 ```
 
 ## Key Specs

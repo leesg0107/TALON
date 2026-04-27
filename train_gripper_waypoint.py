@@ -9,6 +9,9 @@ import argparse
 import os
 import json
 
+# Ensure working directory is project root (for relative paths)
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--mode", choices=["flight", "loaded"], default="flight")
 parser.add_argument("--num_envs", type=int, default=4096)
@@ -44,7 +47,7 @@ def main():
     set_seed(args.seed)
 
     mode_name = f"gripper_waypoint_{args.mode}"
-    log_dir = args.log_dir or os.path.join("logs", mode_name)
+    log_dir = args.log_dir or os.path.join("models", mode_name)
     os.makedirs(log_dir, exist_ok=True)
 
     print(f"\n{'='*60}")

@@ -19,9 +19,9 @@ from isaaclab.sim import SimulationCfg
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
 
-# Path to the URDF (relative to this file's directory)
-_URDF_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-URDF_PATH = os.path.join(_URDF_DIR, "gripper_drone_v5.urdf")
+# Path to the URDF (in assets/ directory)
+_PROJECT_ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+URDF_PATH = os.path.join(_PROJECT_ROOT, "assets", "gripper_drone_v5.urdf")
 
 
 class Stage(IntEnum):
@@ -274,8 +274,8 @@ class GripperDroneEnvCfg(DirectRLEnvCfg):
     residual_scale: float = 0.1           # RL residual multiplier (0.0 = pure analytical)
 
     # Stage 4: Loaded flight
-    delivery_range_xy: float = 1.0   # same as Stage 1 goal range
-    delivery_z: float = 1.5          # reasonable altitude for loaded flight
+    delivery_range_xy: float = 1.0   # box placement range (WP range is in _generate_trajectory)
+    delivery_z: float = 1.5          # delivery altitude
 
     # Stage 5: Release (reuses Stage 2/3 params)
 

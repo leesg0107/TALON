@@ -1,9 +1,0 @@
-PD Analytical Controller — dynamic
-Episode: 8.0s, Envs: 100
-
-Total episodes: 1538
-Dock: 141/1538 (9.2%)
-Overlap lost: 762 (49.5%)
-No descent: 177 (11.5%)
-Far: 458 (29.8%)
-Crash: 0 (0.0%)

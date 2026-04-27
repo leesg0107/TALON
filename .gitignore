@@ -1,11 +1,22 @@
-# Training runs & checkpoints
-runs/
-logs/
+# Archive (old experiments, unused scripts)
+archive/
 
 # Python cache
 __pycache__/
 *.pyc
+*.pyo
 
 # IDE
 .vscode/
 .idea/
+
+# Isaac Lab / Sim
+*.usd
+*.usda
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude memory (personal)
+.claude/

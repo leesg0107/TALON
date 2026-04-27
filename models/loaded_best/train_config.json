@@ -1,0 +1,6 @@
+{
+  "mode": "loaded",
+  "num_envs": 4096,
+  "max_steps": 1000000000,
+  "env": "GripperWaypointEnv"
+}

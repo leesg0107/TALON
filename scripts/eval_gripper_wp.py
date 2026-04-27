@@ -8,7 +8,9 @@ Usage:
   python scripts/eval_gripper_wp.py --loaded     # loaded mode (Stage 4)
 """
 import sys, os, argparse, math
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _PROJECT_ROOT)
+os.chdir(_PROJECT_ROOT)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--loaded", action="store_true", help="Stage 4 loaded mode")
@@ -29,9 +31,9 @@ from isaaclab_rl.skrl import SkrlVecEnvWrapper
 MODE = "loaded" if args.loaded else "flight"
 
 if MODE == "loaded":
-    CKPT = "logs/gripper_wp_loaded_v21/best_agent.pt"
+    CKPT = "models/loaded_best/best_agent.pt"
 else:
-    CKPT = "logs/gripper_wp_flight_v6/final_agent.pt"
+    CKPT = "models/flight_best/final_agent.pt"
 
 NUM_ENVS = args.num_envs
 TARGET_EPISODES = args.episodes

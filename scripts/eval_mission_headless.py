@@ -64,11 +64,11 @@ class FakeEnv:
         self.num_envs = n
 
 agent_s1 = build_waypoint_agent(env=FakeEnv(obs_s1, NUM_ENVS), device=device, mode="flight",
-                                checkpoint_path="logs/gripper_wp_flight_v6/final_agent.pt")
+                                checkpoint_path="models/flight_best/final_agent.pt")
 agent_s1.set_running_mode("eval")
 
 agent_s4 = build_waypoint_agent(env=FakeEnv(obs_s4, NUM_ENVS), device=device, mode="loaded",
-                                checkpoint_path="logs/gripper_wp_loaded_v20/best_agent.pt")
+                                checkpoint_path="models/loaded_best/best_agent.pt")
 agent_s4.set_running_mode("eval")
 
 # ============================================================
@@ -214,6 +214,8 @@ def setup_mission(eids):
         dock_steps[eid] = 0
         climb_steps[eid] = 0
         hover_stab_steps[eid] = 0
+        if hasattr(setup_mission, '_dock_counted'):
+            setup_mission._dock_counted[eid] = False
 
     env.reset_buf[eids] = False
     env.reset_terminated[eids] = False
@@ -222,6 +224,8 @@ def setup_mission(eids):
 def record_fail(eid, reason, detail=""):
     results["total"] += 1
     fail_reasons[reason] = fail_reasons.get(reason, 0) + 1
+    if "climb" in reason and detail:
+        print(f"    CLIMB_FAIL env{eid}: {detail}")
     if detail:
         print(f"    [env{eid}] FAIL: {reason} — {detail}")
 
@@ -373,8 +377,7 @@ for step in range(MAX_STEPS * 10):  # enough steps for TARGET_MISSIONS
             if contain >= 325:
                 box_drone_dist = torch.norm(pos_w[eid] - obj_pos[eid]).item()
                 if box_drone_dist < 0.30:
-                    # Grasped → climb
-                    results["dock_success"] += 1
+                    # Grasped → climb (only count first success per mission)
                     drone_mass = env.attitude_ctrl.base_mass * env.mass_scale[eid]
                     env.attitude_ctrl.mass[eid] = drone_mass + 0.2
                     phase[eid] = PHASE_CLIMB
@@ -417,17 +420,22 @@ for step in range(MAX_STEPS * 10):  # enough steps for TARGET_MISSIONS
             bd = torch.norm(pos_w[eid] - obj_pos[eid]).item()
             cs = climb_steps[eid].item()
 
-            # Early detect: box didn't move with drone (fake grasp)
-            # If drone climbed >0.3m above box start but box still at pedestal → not grasped
+            # Early detect 1: box stayed on pedestal, drone flew up alone → retry
             if cs > 30 and box_z_local < 0.60 and cur_z - box_z > 0.25:
-                # Box stayed on pedestal, drone flew up alone → retry dock
                 env.contain_hold_count[eid] = 0
                 if hasattr(env, '_stuck_count'):
                     env._stuck_count[eid] = 0
+                # _dock_counted stays True — same mission, don't re-count
                 phase[eid] = PHASE_DOCK
                 dock_steps[eid] = 0
-                results["dock_success"] -= 1  # was a false positive
                 results["grasp_retries"] = results.get("grasp_retries", 0) + 1
+                continue
+
+            # Early detect 2: drone+box fell together to ground → mission failed
+            drone_z_local = cur_z - env.scene.env_origins[eid, 2].item()
+            if cs > 60 and drone_z_local < 0.30:
+                phase[eid] = PHASE_DONE
+                record_fail(eid, "climb_failed", f"ground_crash drone_z={drone_z_local:.2f} box_z={box_z_local:.2f}")
                 continue
 
             if cur_z > 1.0:
@@ -444,15 +452,15 @@ for step in range(MAX_STEPS * 10):  # enough steps for TARGET_MISSIONS
                 phase[eid] = PHASE_DELIVERY
             elif cs > 1500:
                 phase[eid] = PHASE_DONE
-                record_fail(eid, "climb_failed", f"timeout z={cur_z:.2f} bd={bd:.2f} box_z_l={box_z_local:.2f}")
+                record_fail(eid, "climb_timeout", f"z={cur_z:.2f} bd={bd:.2f} box_z_l={box_z_local:.2f}")
             elif cur_z < 0.05:
                 phase[eid] = PHASE_DONE
-                record_fail(eid, "climb_failed", f"crashed z={cur_z:.2f}")
+                record_fail(eid, "climb_crashed", f"z={cur_z:.2f}")
             elif bd > 0.50:
                 phase[eid] = PHASE_DONE
                 origin_z = env.scene.env_origins[eid, 2].item()
                 drone_z_l = cur_z - origin_z
-                record_fail(eid, "climb_failed", f"box_lost bd={bd:.2f} drone_z={drone_z_l:.2f} box_z={box_z_local:.2f}")
+                record_fail(eid, "climb_box_lost", f"bd={bd:.2f} drone_z={drone_z_l:.2f} box_z={box_z_local:.2f}")
 
     # ---- HOVER STABILIZE (phase==4) — PD holds position, drone settles before RL takes over ----
     h_mask = (phase == PHASE_HOVER_STAB)
@@ -590,7 +598,7 @@ for step in range(MAX_STEPS * 10):  # enough steps for TARGET_MISSIONS
         print(f"  [{step/150:5.0f}s] A={a_mask.sum().item():>2} D={d_mask.sum().item():>2} "
               f"C={c_mask.sum().item():>2} V={v_mask.sum().item():>2} | "
               f"missions={total}/{TARGET_MISSIONS} "
-              f"dock={results['dock_success']} "
+              f"fails={results['total']} "
               f"success={results['full_success']} ({100*results['full_success']/n:.0f}%)")
 
 # ============================================================
@@ -601,8 +609,8 @@ print(f"\n{'='*60}")
 print(f"  END-TO-END PARALLEL RESULTS ({NUM_ENVS} envs)")
 print(f"{'='*60}")
 n_completed = results["total"] + results["full_success"]
-n_dock_phase_fail = fail_reasons.get("dock_timeout", 0) + fail_reasons.get("box_fell_during_dock", 0)
-n_climb_fail = fail_reasons.get("climb_failed", 0)
+n_dock_phase_fail = sum(v for k, v in fail_reasons.items() if "dock" in k)
+n_climb_fail = sum(v for k, v in fail_reasons.items() if "climb" in k)
 n_delivery_fail = sum(v for k, v in fail_reasons.items() if "delivery" in k)
 n_approach_fail = sum(v for k, v in fail_reasons.items() if "approach" in k)
 n_dock_entered = n_completed - n_approach_fail
@@ -611,11 +619,13 @@ n_grasp_retries = results.get("grasp_retries", 0)
 print(f"  Total missions:    {n_completed}")
 print(f"  Full success:      {results['full_success']}/{n_completed} ({100*results['full_success']/max(n_completed,1):.1f}%)")
 print()
+n_dock_success = n_dock_entered - n_dock_phase_fail
+n_climb_success = n_dock_success - n_climb_fail
 print(f"  --- Phase success rates ---")
 print(f"  Approach → Dock:   {n_dock_entered}/{n_completed} ({100*n_dock_entered/max(n_completed,1):.1f}%)")
-print(f"  Dock → Climb:      {results['dock_success']}/{n_dock_entered} ({100*results['dock_success']/max(n_dock_entered,1):.1f}%)  (retries: {n_grasp_retries})")
-print(f"  Climb → Delivery:  {results['dock_success']-n_climb_fail}/{results['dock_success']} ({100*(results['dock_success']-n_climb_fail)/max(results['dock_success'],1):.1f}%)")
-print(f"  Delivery → Done:   {results['full_success']}/{max(results['dock_success']-n_climb_fail,1)} ({100*results['full_success']/max(results['dock_success']-n_climb_fail,1):.1f}%)")
+print(f"  Dock → Climb:      {n_dock_success}/{n_dock_entered} ({100*n_dock_success/max(n_dock_entered,1):.1f}%)  (retries: {n_grasp_retries})")
+print(f"  Climb → Delivery:  {n_climb_success}/{n_dock_success} ({100*n_climb_success/max(n_dock_success,1):.1f}%)")
+print(f"  Delivery → Done:   {results['full_success']}/{max(n_climb_success,1)} ({100*results['full_success']/max(n_climb_success,1):.1f}%)")
 print()
 print(f"  --- Failure breakdown ---")
 for reason, count in sorted(fail_reasons.items(), key=lambda x: -x[1]):

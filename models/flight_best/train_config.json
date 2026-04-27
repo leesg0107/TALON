@@ -1,0 +1,6 @@
+{
+  "mode": "flight",
+  "num_envs": 4096,
+  "max_steps": 2000000000,
+  "env": "GripperWaypointEnv"
+}

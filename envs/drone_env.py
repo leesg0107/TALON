@@ -218,14 +218,14 @@ class GripperDroneEnv(DirectRLEnv):
                                        (self._z_integral + z_error * dt_ctrl).clamp(-1.0, 1.0),
                                        self._z_integral * 0.95)
         az_w = Kp_z * z_error + Ki_z * self._z_integral - Kd_z * vel_w[:, 2]
-        # Climb: separate moderate gains to avoid accel clamp bang-bang
-        # Kp=12 hits ±8 clamp → +8 then -8 jerk = 16 m/s² → shakes box loose
-        # Kp=6, Kd=5: max accel=5.5, stays in linear range, no bang-bang
+        # Climb: moderate gains + min clamp to prevent thrust cutoff crash
+        # Without clamp: mass bias → fast vel → huge damping → thrust=0 → free fall
         climb_target_z = 1.5
         needs_climb = grasped & (gripper_pos_w[:, 2] < climb_target_z)
         Kp_climb = 6.0
         Kd_climb = 5.0
         climb_az = Kp_climb * (climb_target_z - gripper_pos_w[:, 2]) - Kd_climb * vel_w[:, 2]
+        climb_az = climb_az.clamp(min=-2.0)  # prevent thrust cutoff free-fall
         az_w = torch.where(needs_climb, climb_az, az_w)
 
         # --- Stuck recovery: sustained 150-step phase ---

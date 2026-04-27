@@ -231,13 +231,27 @@ class GripperWaypointEnv(DirectRLEnv):
         # Tilt
         tilt_angle = torch.acos(R[:, 2, 2].clamp(-1.0, 1.0))
         if self.mode == "loaded":
-            tilt_excess = (tilt_angle - 0.35).clamp(min=0)  # ~20° threshold (tighter for loaded)
-            r_tilt = -4.0 * tilt_excess
+            tilt_excess = (tilt_angle - 0.45).clamp(min=0)  # ~26° threshold
+            r_tilt = -3.0 * tilt_excess
         else:
             tilt_excess = (tilt_angle - 0.52).clamp(min=0)
             r_tilt = -3.0 * tilt_excess
 
-        rewards = r_direction + r_arrive + r_crash + r_smooth + r_angular + r_tilt
+        # Overshoot prevention: penalize high speed near WP (loaded mode only)
+        # Speed floor at 1.5 m/s → model can approach at 1.5 without penalty
+        if self.mode == "loaded":
+            speed = torch.norm(vel_w, dim=-1)
+            near_wp = (pos_err < 1.0).float()
+            r_overshoot = -1.0 * near_wp * (speed - 1.5).clamp(min=0)
+
+            # Box tracking (loaded mode): detect if box fell
+            self.object_pos[:] = self.grasp_object.data.root_pos_w
+            box_local_z = self.object_pos[:, 2] - self.scene.env_origins[:, 2]
+            self._box_dropped = box_local_z < 0.30
+        else:
+            r_overshoot = torch.zeros(self.num_envs, device=self.device)
+
+        rewards = r_direction + r_arrive + r_crash + r_smooth + r_angular + r_tilt + r_overshoot
 
         # Timeout: 3s per WP → terminate (not just penalty)
         timed_out = (self._steps_since_goal > 450)
