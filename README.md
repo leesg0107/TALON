@@ -6,7 +6,7 @@ The drone's two structural plates double as parallel gripper fingers: open for l
 
 > **Demo**: Full autonomous mission — approach, dock, grasp, climb, and deliver.
 
-https://github.com/leesg0107/TALON/releases/download/v1.0/end-to-end.mp4
+https://github.com/user-attachments/assets/36621dbc-eada-4537-889e-e08cf20dc5bc
 
 ---
 
