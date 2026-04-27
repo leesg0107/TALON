@@ -1,36 +1,46 @@
 # TALON — Autonomous Aerial Grasping with Dual-Purpose Landing Gear
 
-A task-decomposed control pipeline for autonomous drone grasping and transport in Isaac Lab: **RL waypoint navigation + analytical PID docking + RL loaded delivery**.
+A quadrotor that **uses its own landing gear as a gripper** to autonomously pick up, transport, and deliver objects — no dedicated manipulator needed.
+
+The drone's two structural plates double as parallel gripper fingers: open for landing, closed for grasping. With only **1 cm of clearance per side** around an 8 cm target object, the system combines RL-trained navigation with an analytical docking controller to achieve end-to-end autonomous grasping and transport in simulation.
+
+> **Demo**: Full autonomous mission — approach, dock, grasp, climb, and deliver.
 
 https://github.com/leesg17/soltronev3/raw/main/assets/end-to-end.webm
 
+---
+
 ## Results
 
-End-to-end evaluation over **500 missions** in 128 parallel environments:
+Each mission consists of the full cycle: approach the target → dock and grasp → climb with payload → deliver to a goal location. Evaluated over **500 missions** in 128 parallel Isaac Lab environments with domain randomization:
 
-| Phase | Description | Success Rate |
-|-------|-------------|-------------|
-| Approach → Dock | RL flight model follows waypoints to above box | **500/500 (100%)** |
-| Dock → Climb | Analytical PID controller grasps box and climbs | **493/500 (98.6%)** |
-| Climb → Delivery | Payload retained during ascent to 1.0m | **446/493 (90.5%)** |
-| Delivery → Done | RL loaded model delivers box to target | **361/446 (80.9%)** |
-| **Full End-to-End** | Complete mission success | **361/500 (72.2%)** |
+| Phase Transition | What Happens | Success Rate |
+|-----------------|-------------|-------------|
+| **Approach → Dock** | RL policy navigates through waypoints to 50 cm above the target | **500/500 (100%)** |
+| **Dock → Climb** | Analytical PID controller descends, aligns, and closes gripper around the box | **493/500 (98.6%)** |
+| **Climb → Delivery** | Drone ascends to 1.0 m with payload; box must stay in gripper | **446/493 (90.5%)** |
+| **Delivery → Done** | RL loaded-flight policy navigates to delivery location with payload | **361/446 (80.9%)** |
+| **Full End-to-End** | Complete autonomous mission from start to delivery | **361/500 (72.2%)** |
 
-## Pipeline Architecture
+---
+
+## How It Works
 
 ```
-Approach (RL)  →  Analytical Dock + Climb  →  Delivery (RL)
- 22D obs           PID Controller              23D obs
- 4D action         (gain-scheduled)            4D action
- flight model                                  loaded model
+Approach (RL)  →  Dock + Climb (Analytical)  →  Delivery (RL)
+ 22D obs           PID with gain scheduling       23D obs (+payload mass)
+ 4D action         Gated descent + auto-grip      4D action
+ flight model      0% crash rate                  loaded model
 ```
 
-1. **Approach**: RL flight policy follows 3–4 waypoints to 50 cm above the box
-2. **Dock**: Analytical PID controller descends with XY-gated descent, closes gripper around box
-3. **Climb**: PID controller (low-gain) lifts drone+box to 1.0 m safe altitude
-4. **Delivery**: RL loaded-flight policy follows 3–4 waypoints to deliver box to target
+| Phase | Controller | What It Does |
+|-------|-----------|-------------|
+| **Approach** | RL (PPO) | Follows 3–4 waypoints to position above the target. Handles wind disturbance. |
+| **Dock** | Analytical PID | Aligns XY over the box, descends through a two-stage gated descent, closes gripper when box is inside. |
+| **Climb** | Analytical PID (low-gain) | Gently ascends to 1.0 m. Low gains prevent shaking the payload loose. |
+| **Delivery** | RL (PPO) | Follows waypoints to the delivery target. Adapts to added payload mass (0.15–0.25 kg). |
 
-The drone uses its own **landing gear as a parallel gripper** (dual-purpose design). The gripper opening is 10 cm with an 8 cm target object, leaving only **1 cm clearance per side** — too tight for RL to solve reliably, which motivates the analytical docking controller.
+**Why not RL for everything?** We tried — RL achieves only 24.8% docking success on dynamic objects despite extensive reward engineering. The 1 cm clearance requires geometric precision that RL exploration cannot reliably provide. See [docs/technical_doc.md §4](docs/technical_doc.md#4-rl-docking-attempt-stage-3) for the full failure analysis.
 
 ---
 
@@ -46,14 +56,16 @@ The drone uses its own **landing gear as a parallel gripper** (dual-purpose desi
 ### Installation
 
 ```bash
-git clone https://github.com/leesg17/soltronev3.git
-cd soltronev3
+git clone https://github.com/leesg0107/TALON.git
+cd TALON
 pip install skrl
 ```
 
 ---
 
 ## Training Guide
+
+Training proceeds in stages — each stage builds on the previous one.
 
 ### Step 1: Train Approach Model (Flight)
 
@@ -66,18 +78,18 @@ python train_gripper_waypoint.py --mode flight --num_envs 4096 \
 
 - **Duration**: ~1B steps (~2 hours on RTX 4090)
 - **Observation**: 22D (body velocity, angular velocity, rotation matrix, goal in body frame, prev action)
-- **Action**: 4D (acceleration xyz + yaw reference)
+- **Action**: 4D (body-frame acceleration xyz + yaw angle reference)
 - **Expected**: `best_agent.pt` at 70–80% of training, 20+ goals/episode
 
-**Verify:**
 ```bash
+# Verify
 python scripts/eval_gripper_wp.py --num-envs 64 --episodes 200
 # Expected: ~20 goals/episode, 0% crash
 ```
 
 ### Step 2: Train Loaded Flight (Base)
 
-Train loaded flight with box ideally placed in gripper. Warm-start from flight model.
+Train loaded flight with box ideally placed in gripper. **Warm-start from the flight model** — training loaded flight from scratch fails because the drone must first know how to fly.
 
 ```bash
 python train_gripper_waypoint.py --mode loaded --num_envs 4096 \
@@ -86,35 +98,31 @@ python train_gripper_waypoint.py --mode loaded --num_envs 4096 \
   --log_dir models/my_loaded_base
 ```
 
-- `--warm_start`: Copies flight model weights (22D→23D, 23rd input initialized to zero)
-- `--reset_std`: Resets exploration noise to 1.0 (required for new task adaptation)
+- `--warm_start`: Copies flight model weights (22D→23D, new payload input initialized to zero)
+- `--reset_std`: Resets exploration noise to 1.0 (needed because the old policy is near-deterministic)
 - **Duration**: ~1B steps
 - Box is placed **ideally centered** in gripper during this phase
 
-**Verify:**
 ```bash
+# Verify
 python scripts/eval_gripper_wp.py --loaded --num-envs 64 --episodes 200
 # Expected: ~19 goals/episode
 ```
 
 ### Step 3: Generate Physical Grasp States
 
-Run the analytical docking controller to collect ~5,000 physically-realistic grasped states.
+Step 2 trains with ideal box placement. Real docking produces asymmetric, tilted grasps. This step collects ~5,000 realistic grasped states by running the analytical docking controller:
 
 ```bash
 python scripts/generate_grasp_states.py
 # → data/grasp_states.pt (~5 min, 128 parallel envs)
-# ~97% dock success rate, diverse grasp configurations
 ```
 
-This captures real physical states after dock+climb:
-- Drone position/orientation/velocity at z ≈ 1.2 m
-- Box position/orientation (as physically held by gripper)
-- Joint angles (gripper closed around box)
+Each saved state includes drone pose/velocity, box pose (as physically held by gripper), and joint angles after a real dock+climb sequence.
 
 ### Step 4: Fine-tune with Physical Grasp States
 
-Fine-tune the loaded model on realistic grasp states. Loads `data/grasp_states.pt` automatically.
+Fine-tune the loaded model so it can handle realistic (non-ideal) grasps. `data/grasp_states.pt` is loaded automatically.
 
 ```bash
 python train_gripper_waypoint.py --mode loaded --num_envs 4096 \
@@ -122,13 +130,12 @@ python train_gripper_waypoint.py --mode loaded --num_envs 4096 \
   --log_dir models/my_loaded_grasp
 ```
 
-- No `--reset_std` needed (same task, only initial state distribution changes)
 - **Duration**: 500M–1B steps
 - Model adapts to asymmetric grasps, tilted box, varied payload dynamics
 
-### Step 5 (Optional): Overshoot Prevention Fine-tuning
+### Step 5 (Optional): Overshoot Prevention
 
-Further fine-tuning to reduce aggressive maneuvers during delivery.
+Further fine-tuning to reduce aggressive waypoint approach maneuvers during delivery (which cause tilt → payload drop).
 
 ```bash
 python train_gripper_waypoint.py --mode loaded --num_envs 4096 \
@@ -141,41 +148,26 @@ python train_gripper_waypoint.py --mode loaded --num_envs 4096 \
 
 ## Evaluation
 
-### End-to-End (Parallel, Headless)
-
 ```bash
+# End-to-end: 128 parallel environments, 500 missions
 python scripts/eval_mission_headless.py
-# 128 environments, 500 missions
-# Outputs: per-phase success rates, failure breakdown
-```
 
-### End-to-End (Single Env, Rendering)
-
-```bash
+# End-to-end: single environment with rendering
 python scripts/eval_mission.py
-# Visual rendering of drone missions
-```
 
-### Standalone Model Evaluation
-
-```bash
+# Standalone RL model evaluation
 python scripts/eval_gripper_wp.py --num-envs 64 --episodes 200          # Flight
 python scripts/eval_gripper_wp.py --loaded --num-envs 64 --episodes 200  # Loaded
-```
 
-### Analytical Dock Standalone
-
-```bash
+# Standalone analytical docking evaluation
 python scripts/eval_pd_dock.py
-# Tests analytical dock+climb success rate in isolation
-# 128 environments, 200 attempts
 ```
 
 ---
 
 ## Technical Documentation
 
-For detailed system architecture, reward design, analytical controller, and domain randomization:
+For detailed system architecture, reward functions, analytical controller design, and domain randomization:
 
 → **[docs/technical_doc.md](docs/technical_doc.md)**
 
@@ -184,46 +176,56 @@ For detailed system architecture, reward design, analytical controller, and doma
 ## Project Structure
 
 ```
-soltronev3/
-├── train_gripper_waypoint.py      # Training script (flight & loaded)
+TALON/
+├── train_gripper_waypoint.py       # RL training (flight & loaded modes)
 ├── envs/
-│   ├── drone_env.py               # GripperDroneEnv: physics + analytical dock
-│   ├── gripper_waypoint_env.py    # GripperWaypointEnv: RL training wrapper
-│   └── env_cfg.py                 # Environment configuration
+│   ├── drone_env.py                # Core environment: physics simulation,
+│   │                               #   analytical docking controller, reward
+│   │                               #   computation, gripper logic (~900 lines)
+│   ├── gripper_waypoint_env.py     # Wrapper for RL waypoint training:
+│   │                               #   22D/23D obs, 4D action, trajectory gen
+│   └── env_cfg.py                  # All configuration: drone params, DR,
+│                                   #   stage settings, scene layout
 ├── agents/
-│   └── waypoint_ppo_cfg.py        # PPO agent (2×128 MLP)
+│   └── waypoint_ppo_cfg.py         # PPO config: 2×128 MLP, hyperparameters
 ├── controllers/
-│   └── drone_ctrl.py              # AttitudeController + MotorModel (300Hz)
+│   └── drone_ctrl.py               # Inner-loop: SO(3) attitude PD controller,
+│                                   #   motor model, mixer matrix (300 Hz)
 ├── rewards/
-│   └── reward_fn.py               # Stage-specific reward functions
+│   └── reward_fn.py                # Reward functions for all 5 stages
 ├── scripts/
-│   ├── eval_mission.py            # End-to-end eval (rendering)
-│   ├── eval_mission_headless.py   # End-to-end eval (parallel)
-│   ├── eval_gripper_wp.py         # Standalone model eval
-│   ├── eval_pd_dock.py            # Analytical dock eval
-│   └── generate_grasp_states.py   # Physical grasp data generation
+│   ├── eval_mission_headless.py    # End-to-end eval (128 parallel envs)
+│   ├── eval_mission.py             # End-to-end eval (single env, rendering)
+│   ├── eval_gripper_wp.py          # Standalone RL model eval
+│   ├── eval_pd_dock.py             # Standalone analytical dock eval
+│   └── generate_grasp_states.py    # Collect physical grasp states for Stage 4
 ├── data/
-│   └── grasp_states.pt            # ~5000 physical grasp states
-├── assets/                        # URDF, meshes, demo video
-└── docs/
-    └── technical_doc.md           # Detailed technical documentation
+│   └── grasp_states.pt             # ~5,000 pre-simulated grasp states
+├── docs/
+│   └── technical_doc.md            # Full technical documentation
+└── assets/                         # URDF, demo video
 ```
 
 ## Key Specs
 
-- **Physics**: Isaac Lab + PhysX 5, 300 Hz sim / 150 Hz policy
-- **Drone**: 1.08 kg quad, SO(3) attitude PD inner loop
-- **Box**: 8 cm cube, 0.2 kg, dynamic rigid body
-- **Gripper clearance**: 1 cm per side (X-axis)
-- **RL**: PPO (SKRL), 4,096 parallel envs, ~1B steps
-- **Models**: 2×128 MLP, ELU, RunningStandardScaler
+| | |
+|---|---|
+| **Simulator** | Isaac Lab (Isaac Sim 4.5.1) + PhysX 5 |
+| **Physics rate** | 300 Hz simulation, 150 Hz policy (decimation = 2) |
+| **Drone** | 1.08 kg, X-config quadrotor, SO(3) attitude PD inner loop |
+| **Target object** | 8 cm cube, 0.2 kg, dynamic rigid body |
+| **Gripper clearance** | 1 cm per side (X-axis), 6.4 cm per side (Y-axis) |
+| **RL algorithm** | PPO (SKRL), 4,096 parallel environments |
+| **Network** | 2×128 MLP, ELU activation, orthogonal init |
+| **Training** | ~1B steps per model (~2 hours on RTX 4090) |
+| **Domain randomization** | Mass ±10%, motor thrust ±15%, wind 0.5 N, sensor noise |
 
 ## Known Limitations
 
-- **Delivery tilt**: Aggressive turns during loaded flight can exceed 70° → mission termination
-- **Box drop**: Physical grasp quality varies — ~10% of deliveries lose the box
-- **Climb timeout**: ~9% of climbs fail to reach 1.0 m altitude
-- **Simulation only**: No sim-to-real transfer has been attempted
+- **Simulation only** — no sim-to-real transfer attempted
+- **Single object type** — 8 cm cube only; no shape generalization
+- **Delivery tilt** — aggressive turns during loaded flight can exceed 70° → box drop
+- **Climb failure** — ~9% of climbs fail (box slips during ascent)
 
 ## License
 

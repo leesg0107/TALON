@@ -14,6 +14,7 @@
 5. [Analytical Docking Controller](#5-analytical-docking-controller)
 6. [End-to-End Pipeline](#6-end-to-end-pipeline)
 7. [Domain Randomization](#7-domain-randomization)
+8. [Training Pipeline Design](#8-training-pipeline-design)
 ---
  
 ## 1. System Context
@@ -26,7 +27,7 @@ TALON is a quadrotor that uses its own landing gear as a parallel gripper to aut
 ```
 [Approach]  →  [Dock]  →  [Grip Close]  →  [Climb]  →  [Delivery]
   RL              Analytical      Auto          Analytical      RL
-  Stage 1         PD controller                 PD (low-gain)   Stage 4
+  Stage 1         PID controller                PID (low-gain)  Stage 4
 ```
  
 RL handles navigation (Approach, Delivery) where adaptability to wind and payload variation matters. An analytical controller handles docking (Dock, Climb) where geometric precision under sustained contact is critical. This decomposition emerged from empirical analysis: RL was first applied to docking and failed systematically (see [Section 4](#4-rl-docking-attempt-stage-3)).
@@ -519,3 +520,92 @@ Applied per-episode at environment reset in both `GripperDroneEnv` and `GripperW
 | Entropy coefficient | 0.004 |
 | State preprocessor | RunningStandardScaler |
 | Initial log_std | 0.0 (std=1.0), min clamp at -2.0 (std=0.135) |
+
+---
+
+## 8. Training Pipeline Design
+
+**Source**: `train_gripper_waypoint.py`
+
+The RL models cannot be trained in a single run. The training pipeline is a multi-stage process where each stage addresses a specific challenge.
+
+### 8.1 Why Multi-Stage Training?
+
+Training a loaded-flight policy from scratch fails: the agent must simultaneously learn to fly, compensate for payload, and navigate to waypoints. With 4D continuous actions and 23D observations, the search space is too large for PPO to discover stable flight before episode termination dominates the replay buffer.
+
+**Solution**: decompose training into stages, each building on the previous one.
+
+### 8.2 Stage 1: Flight (From Scratch)
+
+**Goal**: learn waypoint navigation without payload.
+
+| Parameter | Value |
+|-----------|-------|
+| Observation | 22D (velocity, angular velocity, rotation matrix, goal in body frame, prev action) |
+| Action | 4D (body acceleration xyz + yaw reference) |
+| Episode length | 20 s |
+| Waypoints per episode | 4, randomly generated |
+| Timeout per waypoint | 3 s (450 steps) |
+| Training steps | ~1B total (4,096 envs × 100-step rollouts × ~2,400 updates) |
+
+The policy learns: (1) stable hover, (2) point-to-point navigation, (3) wind resistance, (4) smooth trajectory following. The `r_direction` reward provides dense per-step gradient, while `r_arrive` with time decay incentivizes fast arrival.
+
+**Peak-then-decay pattern**: PPO performance typically peaks at 70–80% of training, then degrades. The `best_agent.pt` checkpoint (saved automatically by SKRL when total reward peaks) is used, not the final checkpoint.
+
+### 8.3 Stage 4 Base: Loaded Flight (Warm-Start)
+
+**Goal**: learn to fly with payload, starting from the flight policy.
+
+**Warm-start mechanism**: the 22D flight model is loaded into the 23D loaded model by copying all weights and initializing the 23rd input column (payload mass) to zero. This means the loaded model starts with full flight capability and only needs to learn payload adaptation.
+
+**Exploration reset**: the flight model has converged to near-deterministic actions (log_std ≈ −2). Without resetting `log_std` to 0.0 (std = 1.0), the loaded model cannot explore the new payload-induced dynamics. `--reset_std` is required.
+
+During this stage, the box is placed **ideally centered** in the gripper at reset. This simplifies the initial state distribution so the policy can focus on learning loaded dynamics without also handling grasp variability.
+
+**Tilt threshold change**: loaded flight uses a tighter tilt limit (26° vs 30°) because aggressive tilting shifts the payload's center of mass, causing grip failure. The overshoot penalty `r_overshoot` additionally prevents high-speed waypoint approaches that trigger U-turns.
+
+### 8.4 Physical Grasp States
+
+**Problem**: the idealized box placement in Stage 4 Base doesn't match real docking outcomes. After a physical dock, the box is often:
+- Off-center by 1–3 mm (within clearance but not centered)
+- Tilted 2–5° (gripper plates don't perfectly align)
+- At varying heights (some grasps catch the box lower than others)
+
+If the policy only trains on perfectly centered placements, it fails on real grasps.
+
+**Solution**: run the analytical docking controller for ~5,000 episodes, save only the successful post-climb states `(drone_pose, box_pose, joint_angles, mass_scale, motor_kf_scale)`, and use these as the initial state distribution for Stage 4 fine-tuning.
+
+The `generate_grasp_states.py` script:
+1. Spawns the drone 50 cm above the box (simulating end of approach phase)
+2. Runs the analytical docking controller until grip closure
+3. Climbs to 1.2 m altitude
+4. Saves the state **only if** box is still in the gripper envelope
+5. Filters: ~97% of attempts succeed → ~4,996 valid states
+
+### 8.5 Stage 4 Fine-tune: Physical Grasp States
+
+The loaded-base model is fine-tuned on the physical grasp state distribution. No `--reset_std` is needed because the task is the same (waypoint navigation with payload) — only the initial state distribution changes.
+
+The model adapts to:
+- Asymmetric grasps → learns to compensate for off-center payload
+- Tilted box → learns that payload inertia differs from ideal
+- Variable grasp quality → robust to the range of outcomes the analytical docking controller produces
+
+### 8.6 Transfer Learning Summary
+
+```
+Stage 1 (flight, from scratch)
+    ↓ warm-start (22D→23D, reset std)
+Stage 4 Base (loaded, ideal box placement)
+    ↓ checkpoint (no reset std)
+Stage 4 Grasp (loaded, physical grasp states)
+    ↓ checkpoint (no reset std)
+Stage 4 Final (loaded, overshoot fine-tune, optional)
+```
+
+Each transition changes exactly one variable:
+- 1→4 Base: add payload (warm-start handles obs dim change)
+- 4 Base→Grasp: change initial state distribution (same task)
+- Grasp→Final: add overshoot penalty (same distribution, refined behavior)
+
+This incremental approach prevents catastrophic forgetting and allows each stage to converge within ~1B steps (~2 hours on RTX 4090).
