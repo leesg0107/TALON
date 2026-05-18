@@ -1,0 +1,11 @@
+# Reward Design Comparison — Peak metrics per experiment
+# For thesis Figure: bar chart comparing peak dock performance across reward variants
+experiment,description,reward_change,box_type,r_success_peak,r_success_peak_step,r_success_peak_pct,overlap_peak,total_reward_peak,r_success_final,overlap_final
+8s_kinematic,"Baseline (Stage1→kinematic, 8s)",v3 baseline,kinematic,0.0553,212367,87,0.1737,20734,0.0395,0.1255
+8s_sigmoid,Sigmoid xy_aligned threshold,+sigmoid staged descent,kinematic,0.0592,65907,49,0.1983,12048,0.0498,0.1608
+safety_v1,Safety bonus mult=2.0,+safety_mult(2.0) on r_contain/dock/hold,kinematic,0.1055,231895,95,0.2456,17302,0.0850,0.1955
+safety_v2,Safety bonus mult=3.0,safety_mult 2.0→3.0,kinematic,0.1219,139137,57,0.2745,21259,0.0841,0.2093
+safety_v3_xy_quality,xy_quality gate on r_approach_z,+xy_quality gate (r_approach_z only),kinematic,0.1096,12205,10,0.2495,16083,0.0495,0.1192
+kinetic_v2,Kinetic energy penalty -20,+r_kinetic(-20) near box,kinematic,0.1070,4882,11,0.2426,16766,0.0663,0.1591
+dynamic_v2,Stage1→dynamic from scratch,"safety_mult(2.0), dynamic box",dynamic,0.0250,419852,86,0.1016,9020,0.0153,0.0764
+dynamic_v6_xy_overhead,xy_overhead on r_approach_z + r_z,+xy_overhead gate (both r_z),dynamic,0.0120,478436,98,0.0700,5996,0.0034,0.0201

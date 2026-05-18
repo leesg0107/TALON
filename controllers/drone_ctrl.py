@@ -177,6 +177,11 @@ class AttitudeController:
 
         self.motor_model = MotorModel(num_envs, device)
 
+        # Tilt safety limiter (cone projection on desired thrust direction).
+        # When set to a radians value, des_z_world is clamped to within this angle
+        # of +z_world before attitude tracking. Default None = disabled (baseline).
+        self.max_tilt_rad: float | None = None
+
     def reset(self, env_ids: torch.Tensor):
         """Reset controller state for specified environments."""
         self.motor_model.reset(env_ids)
@@ -218,6 +223,25 @@ class AttitudeController:
         accel_world = torch.bmm(R, accel_cmd_b.unsqueeze(-1)).squeeze(-1)
         des_accel_world = accel_world + torch.tensor([0.0, 0.0, self.gravity], device=self.device)
         des_z_world = des_accel_world / (des_accel_world.norm(dim=-1, keepdim=True) + 1e-6)
+
+        # Tilt safety limiter: project des_z_world to cone with apex +z_world,
+        # half-angle = max_tilt_rad. Preserves azimuthal direction.
+        # Caps how far the SO(3) tracker will try to tilt without disrupting policy.
+        if self.max_tilt_rad is not None:
+            import math as _m
+            cos_max = _m.cos(self.max_tilt_rad)
+            sin_max = _m.sin(self.max_tilt_rad)
+            z_comp = des_z_world[:, 2]
+            needs_clamp = z_comp < cos_max
+            if needs_clamp.any():
+                xy = des_z_world[:, :2]
+                xy_mag = xy.norm(dim=-1, keepdim=True).clamp(min=1e-6)
+                xy_dir = xy / xy_mag
+                mask = needs_clamp.unsqueeze(-1)
+                des_z_world = torch.cat([
+                    torch.where(mask, sin_max * xy_dir, des_z_world[:, :2]),
+                    torch.where(needs_clamp, torch.full_like(z_comp, cos_max), z_comp).unsqueeze(-1),
+                ], dim=-1)
 
         # Desired yaw defines the heading
         cos_yaw = torch.cos(yaw_ref)

@@ -1,0 +1,4 @@
+,climb_failed,box_dropped_delivery,too_tilted_delivery,dock_timeout,box_fell_during_dock,other
+Baseline,48,44,52,11,5,3
+Fix 1+2,23,48,30,11,5,9
+Fix 1+1.5+2,17,14,30,11,25,3

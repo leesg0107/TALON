@@ -259,7 +259,7 @@ env.contain_hold_count[:] = 0
 # Now transition all envs from SETTLE → APPROACH
 phase[:] = PHASE_APPROACH
 
-TARGET_MISSIONS = 500
+TARGET_MISSIONS = 350
 print(f"\n{'='*60}")
 print(f"  END-TO-END PARALLEL EVAL ({NUM_ENVS} envs, target={TARGET_MISSIONS} missions)")
 print(f"  Stage 1: gripper_wp_flight_v6  |  Stage 4: gripper_wp_loaded_v13")
@@ -377,11 +377,33 @@ for step in range(MAX_STEPS * 10):  # enough steps for TARGET_MISSIONS
             if contain >= 325:
                 box_drone_dist = torch.norm(pos_w[eid] - obj_pos[eid]).item()
                 if box_drone_dist < 0.30:
-                    # Grasped → climb (only count first success per mission)
-                    drone_mass = env.attitude_ctrl.base_mass * env.mass_scale[eid]
-                    env.attitude_ctrl.mass[eid] = drone_mass + 0.2
-                    phase[eid] = PHASE_CLIMB
-                    climb_steps[eid] = 0
+                    # Compute drone attitude and box depth in gripper body frame.
+                    R_v = quat_to_rot_matrix(env.robot.data.root_quat_w[eid:eid+1])[0]
+                    tilt_v = math.acos(R_v[2, 2].clamp(-1.0, 1.0).item()) * 57.2958
+                    ang_norm = torch.norm(env.robot.data.root_ang_vel_b[eid]).item()
+                    gripper_offset_w = R_v @ torch.tensor([0., 0., -0.08], device=device)
+                    gripper_pos_w = pos_w[eid] + gripper_offset_w
+                    box_rel_w = obj_pos[eid] - gripper_pos_w
+                    box_offset_b = R_v.T @ box_rel_w
+
+                    attitude_ok = (tilt_v < 15.0 and ang_norm < 2.0)
+                    # With Fix 2.0a (dock_hold_z + 2cm), shallow grasps should rarely
+                    # form. Depth check is a safety net — fail rather than retry
+                    # (retry caused box_fell_during_dock side effect with no real
+                    # benefit since waiting doesn't deepen a locked grasp).
+                    deep_enough = (box_offset_b[1].item() < -0.020)
+
+                    if attitude_ok and deep_enough:
+                        drone_mass = env.attitude_ctrl.base_mass * env.mass_scale[eid]
+                        env.attitude_ctrl.mass[eid] = drone_mass + 0.2
+                        phase[eid] = PHASE_CLIMB
+                        climb_steps[eid] = 0
+                    elif not deep_enough:
+                        # Safety net: shallow grasp slipped past Fix 2.0a — fail cleanly.
+                        phase[eid] = PHASE_DONE
+                        record_fail(eid, "dock_shallow_grasp",
+                                    f"box_offset_y={box_offset_b[1].item():+.4f}")
+                    # else (attitude unstable): hold dock altitude, analytical stabilizes
                 else:
                     # Grip missed → reset contain, gripper re-opens, PD retries
                     env.contain_hold_count[eid] = 0
@@ -439,7 +461,11 @@ for step in range(MAX_STEPS * 10):  # enough steps for TARGET_MISSIONS
                 continue
 
             if cur_z > 1.0:
-                # Climb done → delivery directly
+                # NEW Fix 2 — CLIMB→DELIVERY hover stabilization.
+                # Diagnostic showed delivery failures correlate strongly with climb-exit
+                # state (drone_vel_z Cohen's d=+1.4, ang_vel d=-0.75). Routing through
+                # HOVER_STABILIZE lets all envs reach a consistent stable state before
+                # handing control to the RL delivery policy.
                 cur = pos_w[eid].tolist()
                 dt_xy = [delivery_target[eid, 0].item(), delivery_target[eid, 1].item()]
                 del_wps = generate_waypoints(cur, dt_xy, target_z=2.5, num_wps=3, min_z=1.5)
@@ -447,9 +473,10 @@ for step in range(MAX_STEPS * 10):  # enough steps for TARGET_MISSIONS
                     delivery_wps[eid, j] = wp
                 n_delivery_wps[eid] = len(del_wps)
                 wp_idx[eid] = 0
-                current_goal[eid] = delivery_wps[eid, 0]
+                current_goal[eid] = pos_w[eid].clone()    # hover at current pos
                 prev_action_4d[eid] = 0
-                phase[eid] = PHASE_DELIVERY
+                phase[eid] = PHASE_HOVER_STAB
+                hover_stab_steps[eid] = 0
             elif cs > 1500:
                 phase[eid] = PHASE_DONE
                 record_fail(eid, "climb_timeout", f"z={cur_z:.2f} bd={bd:.2f} box_z_l={box_z_local:.2f}")
@@ -462,12 +489,12 @@ for step in range(MAX_STEPS * 10):  # enough steps for TARGET_MISSIONS
                 drone_z_l = cur_z - origin_z
                 record_fail(eid, "climb_box_lost", f"bd={bd:.2f} drone_z={drone_z_l:.2f} box_z={box_z_local:.2f}")
 
-    # ---- HOVER STABILIZE (phase==4) — PD holds position, drone settles before RL takes over ----
+    # ---- HOVER STABILIZE (phase==4) — RL hover until vel_z and tilt settle ----
+    # Self-supervised settle: goal = current position so policy commands near-zero action,
+    # damping out residual climb dynamics before transitioning to delivery WPs.
     h_mask = (phase == PHASE_HOVER_STAB)
     if h_mask.any():
         h_ids = h_mask.nonzero(as_tuple=False).view(-1)
-        # Use loaded-flight RL model for hover (goal = current position → near-zero action)
-        # This lets the RL model "warm up" with gentle commands
         for eid in h_ids.tolist():
             hover_stab_steps[eid] += 1
             current_goal[eid] = pos_w[eid].clone()  # goal = current pos → hover
@@ -479,10 +506,23 @@ for step in range(MAX_STEPS * 10):  # enough steps for TARGET_MISSIONS
         action_8d[h_ids, :3] = act[:, :3]
         action_8d[h_ids, 6] = act[:, 3]
 
-        # Transition to delivery after 1.5s (225 steps) of stable hover
+        # Transition when either (a) drone is stable (vel_z<0.15, tilt<5°) or (b) timeout 1.0s.
+        # Diagnostic d=+1.4 on vel_z separator → settling vel_z is the key feature.
         for eid in h_ids.tolist():
+            # Box-drop check during hover (drone still holds payload)
+            box_z_l = obj_pos[eid, 2].item() - env.scene.env_origins[eid, 2].item()
+            box_dist = torch.norm(pos_w[eid] - obj_pos[eid]).item()
+            if box_z_l < 0.30 or box_dist > 0.50:
+                phase[eid] = PHASE_DONE
+                record_fail(eid, "box_dropped_hover_stab",
+                            f"box_z={box_z_l:.2f} dist={box_dist:.2f}")
+                continue
             hs = hover_stab_steps[eid].item()
-            if hs >= 225:
+            vz = env.robot.data.root_lin_vel_w[eid, 2].item()
+            R_h = quat_to_rot_matrix(env.robot.data.root_quat_w[eid:eid+1])[0]
+            tilt_h = math.acos(R_h[2, 2].clamp(-1.0, 1.0).item()) * 57.2958
+            stable = abs(vz) < 0.15 and tilt_h < 5.0
+            if stable or hs >= 150:    # 150 steps = 1.0s timeout
                 wp_idx[eid] = 0
                 current_goal[eid] = delivery_wps[eid, 0]
                 prev_action_4d[eid] = 0
@@ -555,7 +595,7 @@ for step in range(MAX_STEPS * 10):  # enough steps for TARGET_MISSIONS
         env.contain_hold_count[approach_eids] = 0
 
     # ---- Self-managed termination (approach/delivery only) ----
-    active = (phase == PHASE_APPROACH) | (phase == PHASE_DELIVERY)
+    active = (phase == PHASE_APPROACH) | (phase == PHASE_DELIVERY) | (phase == PHASE_HOVER_STAB)
     if active.any():
         act_ids = active.nonzero(as_tuple=False).view(-1)
         local_p = pos_w[act_ids] - env.scene.env_origins[act_ids]
@@ -573,7 +613,12 @@ for step in range(MAX_STEPS * 10):  # enough steps for TARGET_MISSIONS
             if reason:
                 p = phase[eid].item()
                 phase[eid] = PHASE_DONE
-                phase_name = 'approach' if p == PHASE_APPROACH else 'delivery'
+                if p == PHASE_APPROACH:
+                    phase_name = 'approach'
+                elif p == PHASE_HOVER_STAB:
+                    phase_name = 'hover_stab'
+                else:
+                    phase_name = 'delivery'
                 record_fail(eid, f"{reason}_{phase_name}")
 
     # ---- Recycle done envs ----
@@ -600,6 +645,10 @@ for step in range(MAX_STEPS * 10):  # enough steps for TARGET_MISSIONS
               f"missions={total}/{TARGET_MISSIONS} "
               f"fails={results['total']} "
               f"success={results['full_success']} ({100*results['full_success']/n:.0f}%)")
+        if fail_reasons:
+            top = sorted(fail_reasons.items(), key=lambda x: -x[1])
+            summary = "  | ".join(f"{k}={v}" for k, v in top)
+            print(f"           FAIL_DIST ({len(top)} types): {summary}")
 
 # ============================================================
 # Results
@@ -627,9 +676,38 @@ print(f"  Dock → Climb:      {n_dock_success}/{n_dock_entered} ({100*n_dock_su
 print(f"  Climb → Delivery:  {n_climb_success}/{n_dock_success} ({100*n_climb_success/max(n_dock_success,1):.1f}%)")
 print(f"  Delivery → Done:   {results['full_success']}/{max(n_climb_success,1)} ({100*results['full_success']/max(n_climb_success,1):.1f}%)")
 print()
-print(f"  --- Failure breakdown ---")
+print(f"  --- Failure breakdown (full) ---")
 for reason, count in sorted(fail_reasons.items(), key=lambda x: -x[1]):
-    print(f"  {reason:30s} {count:>3}/{n_completed} ({100*count/max(n_completed,1):.1f}%)")
+    print(f"  {reason:42s} {count:>3}/{n_completed} ({100*count/max(n_completed,1):.1f}%)")
+
+# Aggregate by root-cause prefix so many variants collapse into one group.
+prefix_groups = {
+    "dock_timeout_*":           lambda k: k.startswith("dock_timeout"),
+    "box_fell_during_dock":     lambda k: k == "box_fell_during_dock",
+    "dock_shallow_grasp":       lambda k: k == "dock_shallow_grasp",
+    "climb_*":                  lambda k: "climb" in k,
+    "box_dropped_delivery":     lambda k: k == "box_dropped_delivery",
+    "box_dropped_hover_stab":   lambda k: k == "box_dropped_hover_stab",
+    "too_tilted_delivery":      lambda k: k == "too_tilted_delivery",
+    "too_tilted_hover_stab":    lambda k: k == "too_tilted_hover_stab",
+    "too_low_*":                lambda k: k.startswith("too_low"),
+    "too_far_*":                lambda k: k.startswith("too_far"),
+    "approach_*":               lambda k: k.startswith("approach"),
+}
+print()
+print(f"  --- Failure breakdown (grouped by root cause) ---")
+counted = set()
+for group, predicate in prefix_groups.items():
+    matches = [(k, v) for k, v in fail_reasons.items() if predicate(k) and k not in counted]
+    if matches:
+        total = sum(v for _, v in matches)
+        counted.update(k for k, _ in matches)
+        print(f"  {group:30s} {total:>3}/{n_completed} ({100*total/max(n_completed,1):.1f}%)")
+uncounted = [(k, v) for k, v in fail_reasons.items() if k not in counted]
+if uncounted:
+    print(f"  --- uncounted (define above to capture) ---")
+    for k, v in sorted(uncounted, key=lambda x: -x[1]):
+        print(f"  {k:42s} {v:>3}")
 print(f"{'='*60}")
 
 env.close()

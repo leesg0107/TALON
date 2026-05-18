@@ -1,0 +1,13 @@
+intervention,full_success_pct,climb_failed,box_dropped,too_tilted_delivery,dock_timeout,category
+Baseline (loaded_best),68.4,48,44,52,11,Original
+loaded_grasp_states model,70.3,54,50,0,0,Variant
+Action clip 1.0 (zero-shot),32.5,0,0,0,0,Failed
+Action clip 2.0 (zero-shot),48.9,0,0,0,0,Failed
+Aggressive barrier v1 (retrain),43.2,48,118,0,0,Failed
+Soft tilt-gated barrier v2,66.7,61,39,0,0,Neutral
+Tilt-limiter 45° (controller),65.0,0,0,0,0,Neutral
+Fix 1 (DOCK→CLIMB stability),74.4,23,48,30,0,Works
+Fix 1+2 (+ HOVER_STAB),74.4,23,48,30,0,Same as Fix1
+Fix 1+2+3 (+ lateral damp),73.4,0,0,0,0,Neutral
+Fix 1+1.5+2 (+ depth-gate retry),79.6,17,14,0,0,Best (with caveat)
+Fix 2.0a (dock_hold_z +2cm),45.0,13,8,7,4,Regressed

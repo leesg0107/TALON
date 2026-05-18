@@ -1,0 +1,9 @@
+PD Analytical Controller — kinematic
+Episode: 12.0s, Envs: 100
+
+Total episodes: 1017
+Dock: 894/1017 (87.9%)
+Overlap lost: 44 (4.3%)
+No descent: 77 (7.6%)
+Far: 2 (0.2%)
+Crash: 0 (0.0%)

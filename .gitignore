@@ -20,3 +20,12 @@ Thumbs.db
 
 # Claude memory (personal)
 .claude/
+CLAUDE.md
+
+# Large training artifacts (regenerable, too big for git)
+logs/
+runs/
+
+# Failed experiment checkpoints (large, not needed by paper)
+models/loaded_barrier_v1/
+models/loaded_barrier_v2/

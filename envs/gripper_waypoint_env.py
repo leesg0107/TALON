@@ -244,14 +244,27 @@ class GripperWaypointEnv(DirectRLEnv):
             near_wp = (pos_err < 1.0).float()
             r_overshoot = -1.0 * near_wp * (speed - 1.5).clamp(min=0)
 
+            # Tilt-gated anisotropic action barrier — only active when drone is tilted
+            # high. At level flight (tilt < 26°), no penalty → policy navigates freely.
+            # When tilt > 26°, soft quadratic penalty on excessive lateral cmds.
+            # Anisotropic: X (strut, 1cm clearance) tighter than Y (plate, 6.4cm).
+            # Weights tuned to NEVER exceed r_direction max (~1.5/step).
+            a_x = action[:, 0]
+            a_y = action[:, 1]
+            tilt_gate = (tilt_angle > 0.45).float()        # ~26° gate
+            r_barrier_x = -0.1 * tilt_gate * (a_x.abs() - 1.5).clamp(min=0) ** 2
+            r_barrier_y = -0.05 * tilt_gate * (a_y.abs() - 2.5).clamp(min=0) ** 2
+            r_action_barrier = r_barrier_x + r_barrier_y
+
             # Box tracking (loaded mode): detect if box fell
             self.object_pos[:] = self.grasp_object.data.root_pos_w
             box_local_z = self.object_pos[:, 2] - self.scene.env_origins[:, 2]
             self._box_dropped = box_local_z < 0.30
         else:
             r_overshoot = torch.zeros(self.num_envs, device=self.device)
+            r_action_barrier = torch.zeros(self.num_envs, device=self.device)
 
-        rewards = r_direction + r_arrive + r_crash + r_smooth + r_angular + r_tilt + r_overshoot
+        rewards = r_direction + r_arrive + r_crash + r_smooth + r_angular + r_tilt + r_overshoot + r_action_barrier
 
         # Timeout: 3s per WP → terminate (not just penalty)
         timed_out = (self._steps_since_goal > 450)

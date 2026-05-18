@@ -1,0 +1,10 @@
+metric,dock_mean,dock_median,overlap_lost_mean,overlap_lost_median,notes
+xy_err_m,0.044,0.042,0.052,0.045,"XY alignment at first overlap"
+v_z_ms,-0.325,-0.293,-0.370,-0.405,"Descent velocity (negative=down)"
+v_xy_ms,0.124,0.120,0.138,0.120,"Horizontal velocity"
+tilt_deg,3.9,4.0,4.4,4.2,"Drone tilt angle"
+z_offset_m,0.081,0.081,0.075,0.081,"Gripper height above box top"
+box_local_x_m,-0.002,0.001,-0.002,-0.008,"Box X position in gripper frame"
+box_local_y_m,-0.001,-0.002,-0.002,0.003,"Box Y position in gripper frame"
+x_within_1cm_pct,18,_,12,_,"% within strut gap (±1cm)"
+x_within_2cm_pct,37,_,25,_,"% within 2cm of center"
