@@ -3,39 +3,10 @@
 Mirrors eval_mission.py logic exactly, but runs NUM_ENVS missions simultaneously.
 Phases: approach(0) → dock(1) → climb(2) → delivery(3) → arrived(4) → done(5)
 """
-import sys, os, math, argparse
+import sys, os, math
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _PROJECT_ROOT)
 os.chdir(_PROJECT_ROOT)  # ensure relative paths (logs/, etc.) resolve correctly
-
-# Parse before AppLauncher so unknown args don't confuse Isaac
-_parser = argparse.ArgumentParser(add_help=False)
-_parser.add_argument("--delivery-model",
-                     default="models/loaded_best/best_agent.pt",
-                     help="Path to Stage 4 delivery model checkpoint (.pt)")
-_parser.add_argument("--approach-model",
-                     default="models/flight_best/final_agent.pt",
-                     help="Path to Stage 1 approach model checkpoint (.pt)")
-_parser.add_argument("--tag", default="default",
-                     help="Run tag — used in RESULTS header for log identification")
-_parser.add_argument("--target-missions", type=int, default=500,
-                     help="Number of missions to evaluate (use 50-100 for fast iteration)")
-_parser.add_argument("--seed", type=int, default=None,
-                     help="torch manual seed — set the SAME seed for paired ablation runs")
-_parser.add_argument("--grasp-fix", choices=["nogate", "off", "gate", "full", "regrasp"], default="off",
-                     help="nogate=commit regardless of tilt (ablates attitude gate); "
-                          "off=baseline (attitude gate only); gate=+depth gate & reject; "
-                          "full=gate + ①′ ramped plate-close; "
-                          "regrasp=detect shallow post-lock → re-dock up to K times (the prescription)")
-_parser.add_argument("--dock-hold-z", type=float, default=0.02,
-                     help="gripper hold altitude above box centre during plate close (m). "
-                          "0.02=current baseline; 0.04=pre-dockfix value (measured 42.4%% vs "
-                          "54.8%% shallow); higher should deepen grasps until containment breaks")
-_parser.add_argument("--save-bank", default=None,
-                     help="if set, capture every mission's delivery-ENTRY state to this .pt "
-                          "(grasp_states format) — the REAL handoff distribution for "
-                          "handoff-distribution-aware delivery training")
-_cli_args, _ = _parser.parse_known_args()
 
 from isaaclab.app import AppLauncher
 app_launcher = AppLauncher(headless=True)
@@ -93,16 +64,12 @@ class FakeEnv:
         self.action_space = act_sp
         self.num_envs = n
 
-print(f"\n[CONFIG] approach model:  {_cli_args.approach_model}")
-print(f"[CONFIG] delivery model:  {_cli_args.delivery_model}")
-print(f"[CONFIG] tag:             {_cli_args.tag}\n")
-
 agent_s1 = build_waypoint_agent(env=FakeEnv(obs_s1, NUM_ENVS), device=device, mode="flight",
-                                checkpoint_path=_cli_args.approach_model)
+                                checkpoint_path="models/flight_best/final_agent.pt")
 agent_s1.set_running_mode("eval")
 
 agent_s4 = build_waypoint_agent(env=FakeEnv(obs_s4, NUM_ENVS), device=device, mode="loaded",
-                                checkpoint_path=_cli_args.delivery_model)
+                                checkpoint_path="models/loaded_best/best_agent.pt")
 agent_s4.set_running_mode("eval")
 
 # ============================================================
@@ -248,8 +215,6 @@ def setup_mission(eids):
         dock_steps[eid] = 0
         climb_steps[eid] = 0
         hover_stab_steps[eid] = 0
-        depth_logged[eid] = False
-        regrasp_count[eid] = 0
         if hasattr(setup_mission, '_dock_counted'):
             setup_mission._dock_counted[eid] = False
 
@@ -268,24 +233,6 @@ def record_fail(eid, reason, detail=""):
 # ============================================================
 # Init
 # ============================================================
-# ---- grasp-fix experiment wiring (seed-paired ablation, no RL retrain) ----
-GRASP_FIX = _cli_args.grasp_fix
-if _cli_args.seed is not None:
-    torch.manual_seed(_cli_args.seed)
-    torch.cuda.manual_seed_all(_cli_args.seed)
-env.seat_ramp_enabled = (GRASP_FIX == "full")
-env.dock_hold_offset = _cli_args.dock_hold_z
-lock_depths = []                       # box_offset_y at lock-in, EVERY mission (①′ DV)
-depth_logged = torch.zeros(NUM_ENVS, dtype=torch.bool, device=device)
-REGRASP_MAX = 3                        # regrasp mode: max grasp re-attempts per mission
-regrasp_count = torch.zeros(NUM_ENVS, dtype=torch.long, device=device)
-# Handoff-bank capture (the diverse, shallow-inclusive delivery-entry distribution)
-_BANK_KEYS = ('drone_pos_local', 'drone_quat', 'drone_vel', 'box_pos_local',
-              'box_quat', 'joint_pos', 'mass_scale', 'payload_mass', 'motor_kf_scale')
-_bank = {k: [] for k in _BANK_KEYS} if _cli_args.save_bank else None
-print(f"[CONFIG] grasp_fix={GRASP_FIX}  seed={_cli_args.seed}  seat_ramp={env.seat_ramp_enabled}"
-      f"  dock_hold_z=+{env.dock_hold_offset*100:.0f}mm")
-
 obs, _ = env_wrapped.reset()
 all_ids = torch.arange(NUM_ENVS, device=device)
 setup_mission(all_ids)
@@ -313,7 +260,7 @@ env.contain_hold_count[:] = 0
 # Now transition all envs from SETTLE → APPROACH
 phase[:] = PHASE_APPROACH
 
-TARGET_MISSIONS = _cli_args.target_missions
+TARGET_MISSIONS = 500
 print(f"\n{'='*60}")
 print(f"  END-TO-END PARALLEL EVAL ({NUM_ENVS} envs, target={TARGET_MISSIONS} missions)")
 print(f"  Stage 1: gripper_wp_flight_v6  |  Stage 4: gripper_wp_loaded_v13")
@@ -322,32 +269,13 @@ print(f"{'='*60}\n")
 # ============================================================
 # Main loop
 # ============================================================
-draining = False  # once TARGET missions are LAUNCHED, stop recycling and let every
-                  # in-flight mission finish. Breaking at a completion COUNT truncates
-                  # the ~127 slow in-flight missions (retries/edge cases that fail more)
-                  # -> inflates success at small N and biases longer (gate) modes. Drain fixes it.
 for step in range(MAX_LOOP_STEPS):  # enough steps to ensure 500 mission completion
-    if not draining and results["total"] + results["full_success"] >= TARGET_MISSIONS:
-        draining = True
-    if draining and bool((phase == PHASE_DONE).all()):
+    if results["total"] + results["full_success"] >= TARGET_MISSIONS:
         break
 
     pos_w = env.robot.data.root_pos_w
     obj_pos = env.object_pos
     action_8d = torch.zeros(NUM_ENVS, 8, device=device)
-
-    # ①′ DV: log locked grasp depth (box_offset_y) once per mission at contain~285,
-    # phase-independent (commit fires at contain 200, but depth locks ~280, so the
-    # env is already in CLIMB by lock-in). more negative = deeper.
-    _need = (~depth_logged) & (env.contain_hold_count >= 285)
-    if _need.any():
-        _R = quat_to_rot_matrix(env.robot.data.root_quat_w)
-        _goff = torch.bmm(_R, torch.tensor([0., 0., -0.08], device=device)
-                          .expand(NUM_ENVS, 3).unsqueeze(-1)).squeeze(-1)
-        _boff = torch.bmm(_R.transpose(1, 2), (obj_pos - (pos_w + _goff)).unsqueeze(-1)).squeeze(-1)
-        for _e in _need.nonzero(as_tuple=False).view(-1).tolist():
-            lock_depths.append(_boff[_e, 1].item())
-            depth_logged[_e] = True
 
     # ---- SETTLE (phase==0) — wait 1 step for teleport to commit ----
     s_mask = (phase == PHASE_SETTLE)
@@ -441,87 +369,20 @@ for step in range(MAX_LOOP_STEPS):  # enough steps to ensure 500 mission complet
             contain = env.contain_hold_count[eid].item()
             box_z_local = obj_pos[eid, 2].item() - env.scene.env_origins[eid, 2].item()
 
-            # Hard dock timeout — fires for ANY contain (the contain>=200 'continue'
-            # below skips the original timeout check, which let regrasp holds become
-            # zombies that never reach PHASE_DONE → drain never completes → 12h hang).
-            if dock_steps[eid].item() > DOCK_TIMEOUT:
-                phase[eid] = PHASE_DONE
-                record_fail(eid, f"dock_timeout(c={contain})")
-                continue
-
             # Box fell
             if box_z_local < 0.30 and contain < 150:
                 phase[eid] = PHASE_DONE
                 record_fail(eid, "box_fell_during_dock")
                 continue
 
-            # FINAL CRITERION (after investigation):
-            #   - contain >= 200 (Render-aligned threshold)
-            #   - attitude_ok retained (RL hover_stab needs stable entry)
-            #   - deep_enough REMOVED (Fix 1.5 catches shallow grasps that
-            #     would otherwise SUCCEED with proper mass compensation)
-            #   - Mass compensation uses ACTUAL box mass (Fix B)
-            # Rationale: shallow grasps (1-1.5 cm depth) are NOT inherently
-            # doomed — they fail when thrust mismatch (constant 0.2 vs actual
-            # 0.05-0.5) causes ground_crash. Fix B addresses the root cause;
-            # Fix 1.5 (deep_enough) was masking the real problem.
-            if contain >= 200:
+            if contain >= 325:
                 box_drone_dist = torch.norm(pos_w[eid] - obj_pos[eid]).item()
                 if box_drone_dist < 0.30:
-                    R_v = quat_to_rot_matrix(env.robot.data.root_quat_w[eid:eid+1])[0]
-                    tilt_v = math.acos(R_v[2, 2].clamp(-1.0, 1.0).item()) * 57.2958
-                    ang_norm = torch.norm(env.robot.data.root_ang_vel_b[eid]).item()
-                    # nogate ablates the attitude (tilt) gate entirely → commit regardless
-                    attitude_ok = True if GRASP_FIX == "nogate" else (tilt_v < 15.0 and ang_norm < 2.0)
-
-                    # ② Depth gate: commit to climb only if the grasp is deep AND level
-                    # (grasp-fix on). Depth (box_offset_y, more negative = deeper) locks
-                    # by contain ~280, so a value here is the locked outcome.
-                    if GRASP_FIX in ("gate", "full", "regrasp"):
-                        g_off = R_v @ torch.tensor([0., 0., -0.08], device=device)
-                        b_off = R_v.T @ (obj_pos[eid] - (pos_w[eid] + g_off))
-                        depth_y = b_off[1].item()
-                        deep_enough = depth_y < -0.025
-                    else:
-                        depth_y = float('nan')
-                        deep_enough = True
-
-                    if attitude_ok and deep_enough:
-                        drone_mass = env.attitude_ctrl.base_mass * env.mass_scale[eid]
-                        # Fix B reverted: box mass is hardcoded 0.2 in env_cfg (object_mass
-                        # is sampled but never written to PhysX), so constant 0.2 == plant.
-                        env.attitude_ctrl.mass[eid] = drone_mass + 0.2
-                        phase[eid] = PHASE_CLIMB
-                        climb_steps[eid] = 0
-                    elif GRASP_FIX == "regrasp" and contain >= 290 and not deep_enough:
-                        # Prescription: depth locked shallow → DETECT-AND-REDRAW.
-                        # Re-sample the grasp (re-dock), reusing the pedestal-retry path.
-                        if regrasp_count[eid] < REGRASP_MAX:
-                            regrasp_count[eid] += 1
-                            env.contain_hold_count[eid] = 0
-                            if hasattr(env, '_stuck_count'):
-                                env._stuck_count[eid] = 0
-                            phase[eid] = PHASE_DOCK
-                            dock_steps[eid] = 0
-                            results["regrasp_total"] = results.get("regrasp_total", 0) + 1
-                        elif attitude_ok:
-                            # budget exhausted, level → commit best-effort (accept shallow)
-                            drone_mass = env.attitude_ctrl.base_mass * env.mass_scale[eid]
-                            env.attitude_ctrl.mass[eid] = drone_mass + 0.2
-                            phase[eid] = PHASE_CLIMB
-                            climb_steps[eid] = 0
-                        else:
-                            # budget exhausted AND tilted → terminate cleanly (no zombie hold)
-                            phase[eid] = PHASE_DONE
-                            record_fail(eid, "dock_regrasp_exhausted",
-                                        f"depth_y={depth_y:+.3f} tilt={tilt_v:.0f}")
-                    elif GRASP_FIX in ("gate", "full") and contain >= 400:
-                        # Past the grasp-depth lock window (~280) and still not deep/level
-                        # → reject the handoff (fail-safe / graceful degradation).
-                        reason = "dock_gated_shallow" if not deep_enough else "dock_gated_tilt"
-                        phase[eid] = PHASE_DONE
-                        record_fail(eid, reason, f"depth_y={depth_y:+.3f} tilt={tilt_v:.0f}")
-                    # else: hold — analytical continues to seat / stabilize
+                    # BASELINE: no stability gate, no depth gate — original behavior
+                    drone_mass = env.attitude_ctrl.base_mass * env.mass_scale[eid]
+                    env.attitude_ctrl.mass[eid] = drone_mass + 0.2
+                    phase[eid] = PHASE_CLIMB
+                    climb_steps[eid] = 0
                 else:
                     env.contain_hold_count[eid] = 0
                     if hasattr(env, '_stuck_count'):
@@ -578,11 +439,7 @@ for step in range(MAX_LOOP_STEPS):  # enough steps to ensure 500 mission complet
                 continue
 
             if cur_z > 1.0:
-                # NEW Fix 2 — CLIMB→DELIVERY hover stabilization.
-                # Diagnostic showed delivery failures correlate strongly with climb-exit
-                # state (drone_vel_z Cohen's d=+1.4, ang_vel d=-0.75). Routing through
-                # HOVER_STABILIZE lets all envs reach a consistent stable state before
-                # handing control to the RL delivery policy.
+                # BASELINE: skip HOVER_STAB — go directly to DELIVERY
                 cur = pos_w[eid].tolist()
                 dt_xy = [delivery_target[eid, 0].item(), delivery_target[eid, 1].item()]
                 del_wps = generate_waypoints(cur, dt_xy, target_z=2.5, num_wps=3, min_z=1.5)
@@ -590,10 +447,9 @@ for step in range(MAX_LOOP_STEPS):  # enough steps to ensure 500 mission complet
                     delivery_wps[eid, j] = wp
                 n_delivery_wps[eid] = len(del_wps)
                 wp_idx[eid] = 0
-                current_goal[eid] = pos_w[eid].clone()    # hover at current pos
+                current_goal[eid] = delivery_wps[eid, 0]
                 prev_action_4d[eid] = 0
-                phase[eid] = PHASE_HOVER_STAB
-                hover_stab_steps[eid] = 0
+                phase[eid] = PHASE_DELIVERY
             elif cs > 1500:
                 phase[eid] = PHASE_DONE
                 record_fail(eid, "climb_timeout", f"z={cur_z:.2f} bd={bd:.2f} box_z_l={box_z_local:.2f}")
@@ -644,18 +500,6 @@ for step in range(MAX_LOOP_STEPS):  # enough steps to ensure 500 mission complet
                 current_goal[eid] = delivery_wps[eid, 0]
                 prev_action_4d[eid] = 0
                 phase[eid] = PHASE_DELIVERY
-                if _bank is not None:  # capture the REAL delivery-entry handoff state
-                    _o = env.scene.env_origins[eid]
-                    _bank['drone_pos_local'].append((env.robot.data.root_pos_w[eid] - _o).cpu())
-                    _bank['drone_quat'].append(env.robot.data.root_quat_w[eid].cpu())
-                    _bank['drone_vel'].append(torch.cat([env.robot.data.root_lin_vel_w[eid],
-                                                         env.robot.data.root_ang_vel_w[eid]]).cpu())
-                    _bank['box_pos_local'].append((env.grasp_object.data.root_pos_w[eid] - _o).cpu())
-                    _bank['box_quat'].append(env.grasp_object.data.root_quat_w[eid].cpu())
-                    _bank['joint_pos'].append(env.robot.data.joint_pos[eid].cpu())
-                    _bank['mass_scale'].append(env.mass_scale[eid:eid+1].cpu())
-                    _bank['payload_mass'].append(torch.tensor([0.2]))
-                    _bank['motor_kf_scale'].append(env.motor_kf_scale[eid:eid+1].cpu())
 
     # ---- DELIVERY (phase==5) ----
     v_mask = (phase == PHASE_DELIVERY)
@@ -750,9 +594,9 @@ for step in range(MAX_LOOP_STEPS):  # enough steps to ensure 500 mission complet
                     phase_name = 'delivery'
                 record_fail(eid, f"{reason}_{phase_name}")
 
-    # ---- Recycle done envs (but NOT while draining: let in-flight missions finish) ----
+    # ---- Recycle done envs ----
     done_mask = (phase == PHASE_DONE)
-    if done_mask.any() and not draining:
+    if done_mask.any():
         done_ids = done_mask.nonzero(as_tuple=False).view(-1)
         setup_mission(done_ids)
         # Commit box position for recycled envs
@@ -814,7 +658,6 @@ prefix_groups = {
     "dock_timeout_*":           lambda k: k.startswith("dock_timeout"),
     "box_fell_during_dock":     lambda k: k == "box_fell_during_dock",
     "dock_shallow_grasp":       lambda k: k == "dock_shallow_grasp",
-    "dock_gated_*":             lambda k: k.startswith("dock_gated"),
     "climb_*":                  lambda k: "climb" in k,
     "box_dropped_delivery":     lambda k: k == "box_dropped_delivery",
     "box_dropped_hover_stab":   lambda k: k == "box_dropped_hover_stab",
@@ -839,40 +682,6 @@ if uncounted:
     for k, v in sorted(uncounted, key=lambda x: -x[1]):
         print(f"  {k:42s} {v:>3}")
 print(f"{'='*60}")
-
-# ---- grasp-fix experiment artifacts: class-specific DV (lock-in grasp depth) ----
-if lock_depths:
-    import json, numpy as _np
-    _arr = _np.array(lock_depths)
-    _deep_rate = float((_arr < -0.025).mean())
-    print(f"\n[GRASP-FIX DV] mode={GRASP_FIX} seed={_cli_args.seed} n_lock={len(_arr)} "
-          f"mean_depth_mm={_arr.mean()*1000:.1f} median_mm={_np.median(_arr)*1000:.1f} "
-          f"deep_rate(<-25mm)={_deep_rate*100:.1f}% shallow_rate(>-20mm)={float((_arr>-0.020).mean())*100:.1f}%")
-    _hz_tag = "" if _cli_args.dock_hold_z == 0.02 else f"_hz{int(round(_cli_args.dock_hold_z*1000))}"
-    _outp = os.path.join("logs", f"graspfix_{GRASP_FIX}{_hz_tag}_seed{_cli_args.seed}.json")
-    with open(_outp, "w") as _fh:
-        json.dump({"mode": GRASP_FIX, "seed": _cli_args.seed,
-                   "dock_hold_z": _cli_args.dock_hold_z,
-                   "lock_depths": [float(x) for x in lock_depths],
-                   "fail_reasons": fail_reasons,
-                   "full_success": results["full_success"], "total": results["total"]}, _fh)
-    print(f"[GRASP-FIX DV] wrote {_outp}")
-
-# ---- save the diverse handoff bank (delivery-entry distribution) if requested ----
-if _bank is not None and len(_bank['drone_pos_local']) > 0:
-    _bd = {k: torch.stack(v) for k, v in _bank.items()}
-    _bd['n_states'] = torch.tensor([len(_bd['drone_pos_local'])])
-    torch.save(_bd, _cli_args.save_bank)
-    _R = quat_to_rot_matrix(_bd['drone_quat'])
-    _rel = _bd['box_pos_local'] - _bd['drone_pos_local']
-    _boff = torch.einsum('nji,nj->ni', _R, _rel) - torch.tensor([0., 0., -0.08])
-    _dmm = _boff[:, 1] * 1000.0
-    print(f"\n[BANK] saved {_bd['n_states'].item()} delivery-entry states -> {_cli_args.save_bank}")
-    print(f"[BANK] grasp-depth box_offset_y: mean={_dmm.mean():.1f}mm  "
-          f"deep(<-25mm)={(_dmm < -25).float().mean()*100:.1f}%  "
-          f"shallow(>-20mm)={(_dmm > -20).float().mean()*100:.1f}%  "
-          f"(target ~37% shallow = the real distribution)")
-
 import sys; sys.stdout.flush()   # ensure RESULTS block flushes before app close
 
 env.close()

@@ -398,10 +398,12 @@ class GripperWaypointEnv(DirectRLEnv):
             # ============================================================
             import os
             if not hasattr(self, '_grasp_states'):
-                grasp_path = "data/grasp_states.pt"
+                # Bank path is overridable so the diverse (shallow-inclusive) bank can be
+                # swapped in for the handoff-distribution-aware training experiment.
+                grasp_path = os.environ.get("GRASP_STATES_PATH", "data/grasp_states.pt")
                 if os.path.exists(grasp_path):
                     self._grasp_states = torch.load(grasp_path, map_location=self.device)
-                    print(f"[Stage4] Loaded {self._grasp_states['n_states'].item()} grasp states")
+                    print(f"[Stage4] Loaded {self._grasp_states['n_states'].item()} grasp states from {grasp_path}")
                 else:
                     self._grasp_states = None
 

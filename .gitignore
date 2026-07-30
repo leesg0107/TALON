@@ -25,7 +25,15 @@ CLAUDE.md
 # Large training artifacts (regenerable, too big for git)
 logs/
 runs/
+data/ 
 
 # Failed experiment checkpoints (large, not needed by paper)
 models/loaded_barrier_v1/
 models/loaded_barrier_v2/
+
+# Submission bundle (derived from project, regenerable)
+_submission/
+
+# Reference papers (third-party PDFs) and office lock files
+related-study/
+.~lock.*#

@@ -172,8 +172,12 @@ class GripperDroneEnv(DirectRLEnv):
                         * torch.sigmoid((0.03 - xy_mag) / 0.01))
         Kp_x = 12.0 - 2.0 * dock_proximity
         Kd_x = 8.0 + 1.0 * dock_proximity
-        Kp_y = 8.0 - 1.5 * dock_proximity
-        Kd_y = 6.0 + 1.0 * dock_proximity
+        # Diagnostic-driven: removed Y softening + increased Kp_y.
+        # Type 1 failure mode = drone-box Y misalignment at plate close.
+        # Old (Kp_y=8.0 - 1.5*dp) reduced Kp_y by 18% precisely when Y precision
+        # is most needed. New design: stronger Y, no softening on Y position term.
+        Kp_y = 12.0
+        Kd_y = 7.0 + 1.0 * dock_proximity
 
         ax_w = Kp_x * xy_err[:, 0] - Kd_x * vel_w[:, 0]
         ay_w = Kp_y * xy_err[:, 1] - Kd_y * vel_w[:, 1]
@@ -201,8 +205,15 @@ class GripperDroneEnv(DirectRLEnv):
         if not hasattr(self, '_dock_hold_z'):
             self._dock_hold_z = torch.zeros(self.num_envs, device=self.device)
         just_docked = (self.contain_hold_count >= 150) & (self.contain_hold_count < 155)
-        # Target gripper at box top (obj_z + 0.04) so plates close AROUND the box, not above it
-        self._dock_hold_z = torch.where(just_docked, obj_pos[:, 2] + 0.04, self._dock_hold_z)
+        # Diagnostic-driven fix for Type 2 mechanical interlock:
+        # Diagnosis showed shallow grasps have box_off_z ~ -29 mm vs deep grasps -52 mm
+        # at lock-in. Box cannot descend deep enough into the plate envelope when
+        # hold_z = obj + 4cm. Lower the hold target to obj + 2cm to push the box
+        # ~2cm deeper into the gripper envelope before plate close.
+        # Offset is a knob (eval --dock-hold-z): the 0.02 value above was applied with the
+        # sign backwards — deep grasps sit HIGHER at close, not lower (logs/dock_mechanism).
+        _hold_off = getattr(self, 'dock_hold_offset', 0.02)
+        self._dock_hold_z = torch.where(just_docked, obj_pos[:, 2] + _hold_off, self._dock_hold_z)
 
         # Phase timing: contain 150=hold start, 225=gripper close, 325=climb
         gripper_closing = (self.contain_hold_count >= 150) & (self.contain_hold_count < 325)
@@ -336,8 +347,21 @@ class GripperDroneEnv(DirectRLEnv):
             gripper_cmd = torch.full((self.num_envs,), 0.873, device=self.device)
             # Auto-close on sustained dock (contain_hold_count tracks cumulative containment)
             dock_threshold = 100 if self.cfg.stage == Stage.LOADED_FLIGHT else 225
-            docked_mask = self.contain_hold_count >= dock_threshold
-            gripper_cmd[docked_mask] = -0.087  # fully closed
+            if getattr(self, 'seat_ramp_enabled', False) and self.cfg.stage == Stage.GRASPING:
+                # ①′ Ramped plate-close: close gradually over the grasp-depth lock-in
+                # window (contain 225→290) so the box funnels in, instead of being
+                # pinched at its shallow contain=225 position. Targets the plate-close
+                # dynamics (the only controllable lever) rather than a drone-state push.
+                GRIP_OPEN, GRIP_CLOSED = 0.873, -0.087
+                RAMP_START, RAMP_END = 225.0, 290.0
+                t = ((self.contain_hold_count.float() - RAMP_START)
+                     / (RAMP_END - RAMP_START)).clamp(0.0, 1.0)
+                ramped = GRIP_OPEN + t * (GRIP_CLOSED - GRIP_OPEN)
+                closing = self.contain_hold_count >= RAMP_START
+                gripper_cmd[closing] = ramped[closing]
+            else:
+                docked_mask = self.contain_hold_count >= dock_threshold
+                gripper_cmd[docked_mask] = -0.087  # fully closed
         else:
             # Policy controls gripper
             gripper_cmd = self.scaled_actions[:, 7]

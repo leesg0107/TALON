@@ -2,7 +2,7 @@
 
 A quadrotor that **uses its own landing gear as a gripper** to autonomously pick up, transport, and deliver objects — no dedicated manipulator needed.
 
-The drone's two structural plates double as parallel gripper fingers: open for landing, closed for grasping. With only **1 cm of clearance per side** around an 8 cm target object, the system combines RL-trained navigation with an analytical docking controller to achieve end-to-end autonomous grasping and transport in simulation.
+The drone's two structural plates double as parallel gripper fingers: open for landing, closed for grasping. With only **4 mm of alignment tolerance** along the strut axis around an 8 cm target object, the system combines RL-trained navigation with an analytical docking controller to achieve end-to-end autonomous grasping and transport in simulation.
 
 > **Demo**: Full autonomous mission — approach, dock, grasp, climb, and deliver.
 
@@ -12,15 +12,17 @@ https://github.com/user-attachments/assets/930e69c9-1e46-48ea-aaf9-2749762b3708
 
 ## Results
 
-Each mission consists of the full cycle: approach the target → dock and grasp → climb with payload → deliver to a goal location. Evaluated over **500 missions** in 128 parallel Isaac Lab environments with domain randomization:
+Each mission consists of the full cycle: approach the target → dock and grasp → climb with payload → deliver to a goal location. Evaluated over **384 missions** in 128 parallel Isaac Lab environments with domain randomization:
 
 | Phase Transition | What Happens | Success Rate |
 |-----------------|-------------|-------------|
-| **Approach → Dock** | RL policy navigates through waypoints to 50 cm above the target | **500/500 (100%)** |
-| **Dock → Climb** | Analytical PID controller descends, aligns, and closes gripper around the box | **493/500 (98.6%)** |
-| **Climb → Delivery** | Drone ascends to 1.0 m with payload; box must stay in gripper | **446/493 (90.5%)** |
-| **Delivery → Done** | RL loaded-flight policy navigates to delivery location with payload | **361/446 (80.9%)** |
-| **Full End-to-End** | Complete autonomous mission from start to delivery | **361/500 (72.2%)** |
+| **Approach → Dock** | RL policy navigates through waypoints to 50 cm above the target | **384/384 (100%)** |
+| **Dock → Climb** | Analytical PID controller descends, aligns, and closes gripper around the box | **383/384 (99.7%)** |
+| **Climb → Delivery** | Drone ascends to 1.0 m with payload; box must stay in gripper | **334/383 (87.2%)** |
+| **Delivery → Done** | RL loaded-flight policy navigates to delivery location with payload | **265/334 (79.3%)** |
+| **Full End-to-End** | Complete autonomous mission from start to delivery | **265/384 (69.0%, 95% CI 64.2–73.4%)** |
+
+An earlier evaluation reported 72.2% over 500 missions; that harness stopped counting at a fixed mission target and truncated in-flight missions, biasing the rate upward. The numbers above use the corrected counting (every launched mission is followed to its end) and match the paper in `docs/`.
 
 ---
 
@@ -30,7 +32,7 @@ Each mission consists of the full cycle: approach the target → dock and grasp 
 Approach (RL)  →  Dock + Climb (Analytical)  →  Delivery (RL)
  22D obs           PID with gain scheduling       23D obs (+payload mass)
  4D action         Gated descent + auto-grip      4D action
- flight model      0% crash rate                  loaded model
+ flight model      383/384 dock commits           loaded model
 ```
 
 | Phase | Controller | What It Does |
@@ -40,7 +42,7 @@ Approach (RL)  →  Dock + Climb (Analytical)  →  Delivery (RL)
 | **Climb** | Analytical PID (low-gain) | Gently ascends to 1.0 m. Low gains prevent shaking the payload loose. |
 | **Delivery** | RL (PPO) | Follows waypoints to the delivery target. Adapts to added payload mass (0.15–0.25 kg). |
 
-**Why not RL for everything?** We tried — RL achieves only 24.8% docking success on dynamic objects despite extensive reward engineering. The 1 cm clearance requires geometric precision that RL exploration cannot reliably provide. See [docs/technical_doc.md §4](docs/technical_doc.md#4-rl-docking-attempt-stage-3) for the full failure analysis.
+**Why not RL for everything?** We tried — RL achieves only 24.8% docking success on dynamic objects despite extensive reward engineering. The 4 mm alignment tolerance requires geometric precision that RL exploration cannot reliably provide. See [docs/technical_doc.md §4](docs/technical_doc.md#4-rl-docking-attempt-stage-3) for the full failure analysis.
 
 ---
 
@@ -149,7 +151,8 @@ python train_gripper_waypoint.py --mode loaded --num_envs 4096 \
 ## Evaluation
 
 ```bash
-# End-to-end: 128 parallel environments, 500 missions
+# End-to-end: 128 parallel environments (default target 500 missions;
+# in-flight missions at the target are followed to their end and counted)
 python scripts/eval_mission_headless.py
 
 # End-to-end: single environment with rendering
@@ -221,7 +224,7 @@ TALON/
 | **Physics rate** | 300 Hz simulation, 150 Hz policy (decimation = 2) |
 | **Drone** | 1.08 kg, X-config quadrotor, SO(3) attitude PD inner loop |
 | **Target object** | 8 cm cube, 0.2 kg, dynamic rigid body |
-| **Gripper clearance** | 1 cm per side (X-axis), 6.4 cm per side (Y-axis) |
+| **Gripper geometry** | strut-axis alignment tolerance 4 mm (member faces ±44 mm vs 40 mm payload half-width); closed feet span 53 mm vs 80 mm payload |
 | **RL algorithm** | PPO (SKRL), 4,096 parallel environments |
 | **Network** | 2×128 MLP, ELU activation, orthogonal init |
 | **Training** | ~1B steps per model (~2 hours on RTX 4090) |
@@ -232,7 +235,7 @@ TALON/
 - **Simulation only** — no sim-to-real transfer attempted
 - **Single object type** — 8 cm cube only; no shape generalization
 - **Delivery tilt** — aggressive turns during loaded flight can exceed 70° → box drop
-- **Climb failure** — ~9% of climbs fail (box slips during ascent)
+- **Climb failure** — 12.8% of climbs fail (49/383), mostly the vehicle crashing to the ground after a tilted handoff rather than the box slipping out
 
 ## License
 
